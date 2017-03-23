@@ -1,4 +1,5 @@
 # encoding=utf-8
+import logging
 from time import sleep
 
 from tenacity import retry, retry_if_exception_type, wait_fixed
@@ -7,12 +8,15 @@ from storage import TwitchVideo, Storage
 from twitchAPI import TwitchAPI, NoValidVideo
 from view import View
 
-channel = 'kosdff'
-quality = 'Source'
+logging.basicConfig(filename='twlived.log', level=logging.DEBUG,
+                    format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
+logging.getLogger().addHandler(logging.StreamHandler())
 
-_twitchAPI = TwitchAPI(headers={'Accept': 'application/vnd.twitchtv.v3+json',
-                                'Client-ID': '1jjwhjqteoa0tc75bhvm251wiqpar80'})
-_storage = Storage(path='C:/mydir')
+channel = 'guit88man'
+quality = TwitchAPI.VideoQuality.SOURCE
+
+_twitchAPI = TwitchAPI(client_id='qxwnp14rr4y6l0pqpfmj6s384079n7')
+_storage = Storage(path='D:/vods')
 _view = View()
 
 
@@ -28,8 +32,5 @@ while True:
         stream_video: TwitchVideo = TwitchVideo(info=video_info, playlist_uri=playlist_uri)
         stream_video.download()
         _storage.add_broadcast(stream_video)
-    else:
-        print('waiting 120 sec')
-        sleep(120)
-# test = _twitchAPI.get_video_playlist_uri(channel, quality)
-# print(test)
+    print('waiting 120 sec')
+    sleep(120)
