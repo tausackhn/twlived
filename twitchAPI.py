@@ -1,27 +1,20 @@
 # encoding=utf-8
+import functools
 import logging
-from functools import wraps
-from typing import Dict, List, Union
 
 import requests
 from m3u8 import M3U8
+from typing import Dict, List, Union, Callable, Tuple
 
 
-def _memoized(f):
-    storage = {}
+def method_dispatch(func):
+    dispatcher = functools.singledispatch(func)
 
-    @wraps(f)
-    def wrapper(self, hash_list):
-        single_argument = isinstance(hash_list, str)
-        if single_argument:
-            hash_list = [hash_list]
-        missing_hash = [_ for _ in hash_list if _ not in storage]
-        if len(missing_hash) > 0:
-            storage.update(dict(zip(missing_hash, f(self, missing_hash))))
-        if single_argument:
-            return storage[hash_list[0]]
-        return [storage[key] for key in hash_list]
+    def wrapper(*args, **kw):
+        return dispatcher.dispatch(args[1].__class__)(*args, **kw)
 
+    wrapper.register = dispatcher.register
+    functools.update_wrapper(wrapper, func)
     return wrapper
 
 
@@ -34,16 +27,32 @@ class TwitchAPI:
         MOBILE = 'Mobile'
         AUDIO_ONLY = 'Audio Only'
 
+        @staticmethod
+        def get(quality):
+            d = {'source': TwitchAPI.VideoQuality.SOURCE,
+                 'high': TwitchAPI.VideoQuality.HIGH,
+                 'medium': TwitchAPI.VideoQuality.MEDIUM,
+                 'low': TwitchAPI.VideoQuality.LOW,
+                 'mobile': TwitchAPI.VideoQuality.MOBILE,
+                 'audio only': TwitchAPI.VideoQuality.AUDIO_ONLY}
+            return d[quality]
+
     API_DOMAIN = 'https://api.twitch.tv'
     KRAKEN = '/kraken'
     API = '/api'
     USHER_DOMAIN = 'https://usher.ttvnw.net'
     _MAX_LIMIT = 100
     _DEFAULT_LIMIT = 10
+    _MAX_IDS = 100
     headers = {'Accept': 'application/vnd.twitchtv.v5+json'}
 
     def __init__(self, client_id: str):
         self.headers.update({'Client-ID': client_id})
+        # Take unbound method. Make an usual function using partial()
+        self._get_user_id = self._UserIDStorage(functools.partial(TwitchAPI._get_user_id_, self))
+
+    def update_id_storage(self, channels: List[str]) -> None:
+        self._get_user_id(channels)
 
     def get_stream_status(self, channel: str) -> str:
         logging.debug(f'Retrieving stream status: {channel}')
@@ -87,11 +96,11 @@ class TwitchAPI:
     def get_channel_info(self, channel: str) -> Dict:
         logging.debug(f'Retrieving channel info: {channel}')
         channel_id = self._get_user_id(channel)
-        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/channels/{channel_id}', headers=self.headers)
-        if r.json()['status'] != 404:
+        if channel_id:
+            r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/channels/{channel_id}', headers=self.headers)
             return r.json()
         else:
-            raise NonexistentChannel(r.json()['message'])
+            raise NonexistentChannel(channel)
 
     def get_recording_video(self, channel: str) -> Dict:
         logging.debug(f'Retrieving recording video: {channel}')
@@ -117,25 +126,52 @@ class TwitchAPI:
                                  'allow_audio_only': 'true'})
         return M3U8(r.text)
 
-    # TODO обработка разных типов аргументов через functools.singledispatch и functools.registry
-    # TODO мемоизация с помощью класса
-    @_memoized
-    def _get_user_id(self, username: Union[List[str], str]) -> Union[List[str], str]:
-        logging.debug(f'Retrieving user-id: {len(username)} {username}')
-        single_arg: bool = isinstance(username, str)
-        if single_arg:
-            username = [username]
-        if len(username) > 100:
-            raise TwitchAPIError('Too much user names. Could be <= 100')
+    class _UserIDStorage:
+        cache = {}
+
+        def __init__(self, get_items: Callable[[List[str]], List[Tuple[str, Union[str, None]]]]):
+            self._get_items = get_items
+
+        @method_dispatch
+        def __call__(self, arg):
+            raise ValueError
+
+        @__call__.register(str)
+        def _(self, username: str) -> str:
+            return self([username])[0]
+
+        @__call__.register(list)
+        def _(self, usernames: List[str]) -> List[Union[str, None]]:
+            logging.debug(f'Retrieving user-id from IDStorage: {len(usernames)} {usernames}')
+            missing_names = [_ for _ in usernames if _ not in self.cache]
+            if len(missing_names) > 0:
+                self._update(missing_names)
+            return [self.cache[username] for username in usernames]
+
+        def _update(self, items: List[str]) -> None:
+            logging.debug(f'Updating user-id: {len(items)} {items}')
+            n = TwitchAPI._MAX_IDS
+            items_chunks = [items[i:i + n] for i in range(0, len(items), n)]
+            for chunk in items_chunks:
+                ids = self._get_items(chunk)
+                self.cache.update(ids)
+
+    def _get_user_id_(self, usernames: List[str]) -> List[Tuple[str, Union[str, None]]]:
+        logging.debug(f'Retrieving user-id: {len(usernames)} {usernames}')
+        if len(usernames) > TwitchAPI._MAX_IDS:
+            raise TwitchAPIError('Too much usernames. Must be <= 100')
         r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/users',
                          headers=self.headers,
-                         params={'login': ','.join(username)})
-        if not r.json()['_total'] == len(username):
-            raise NonexistentChannel('Some users does not exist')
-        id = [user['_id'] for user in r.json()['users']]
-        if single_arg:
-            return id[0]
-        return id
+                         params={'login': ','.join(usernames)})
+        if not r.ok:
+            raise TwitchAPIError(f"{r.json()['error']}. {r.json()['message']}")
+        users = r.json()['users']
+        existing_usernames = [user['name'] for user in users]
+        # Missing usernames
+        ids = [(username, None) for username in usernames if username not in existing_usernames]
+        # Existing usernames
+        ids.extend([(user['name'], user['_id']) for user in users])
+        return ids
 
 
 class TwitchAPIError(Exception):
