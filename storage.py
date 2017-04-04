@@ -50,7 +50,7 @@ class TwitchVideo:
         def download_segment(segment_: str) -> requests.Response:
             return requests.get(segment_)
 
-        stream_playlist: _UpdatableM3U8 = _UpdatableM3U8(playlist_uri=self.playlist_uri)
+        stream_playlist: _UpdatableM3U8 = _UpdatableM3U8(self.playlist_uri)
         last_segment = None
         # Disable 'requests' debug message due to many 'get' calls.
         logging.getLogger('requests').setLevel(logging.WARNING)
@@ -74,16 +74,16 @@ class TwitchVideo:
         logging.getLogger('requests').setLevel(logging.DEBUG)
 
     @staticmethod
-    def _validate_info(info):
+    def _validate_info(info: Dict):
         from jsonschema import validate
         validate(info, TwitchVideo._schema)
 
 
 class Storage:
-    def __init__(self, path='.', broadcast_path='{id} {date:%Y-%m-%d}.ts'):
-        self.path = os.path.abspath(path)
-        os.makedirs(path, exist_ok=True)
-        self.broadcast_path = broadcast_path
+    def __init__(self, storage_path: str = '.', vod_path_template: str = '{id} {date:%Y-%m-%d}.ts'):
+        self.path = os.path.abspath(storage_path)
+        os.makedirs(storage_path, exist_ok=True)
+        self.broadcast_path = vod_path_template
 
     def add_broadcast(self, broadcast: TwitchVideo):
         def _sanitize(filename: str, replace_to: str = '') -> str:
@@ -104,16 +104,12 @@ class Storage:
         shutil.move(broadcast.file_path, new_path)
 
 
-class _UpdatableM3U8:
-    def __init__(self, content=None, playlist_uri=None):
-        base_path: str = urljoin(playlist_uri, '.').rstrip('/') if playlist_uri else None
-        self.m3u8 = m3u8.M3U8(content, base_path=base_path) if content else None
+class _UpdatableM3U8(m3u8.M3U8):
+    def __init__(self, playlist_uri: str, content: str = None):
+        base_path: str = urljoin(playlist_uri, '.').rstrip('/')
+        super(_UpdatableM3U8, self).__init__(content, base_path=base_path)
         self.playlist_uri = playlist_uri
-
-    def __getattr__(self, item):
-        return getattr(self.m3u8, item)
 
     def update(self):
         r = requests.get(self.playlist_uri)
-        base_path: str = urljoin(self.playlist_uri, '.').rstrip('/') if self.playlist_uri else None
-        self.m3u8 = m3u8.M3U8(r.text, base_path=base_path)
+        self.__init__(self.playlist_uri, r.text)

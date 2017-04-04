@@ -1,0 +1,6 @@
+jsonschema
+requests
+m3u8
+dateutils
+pyyaml
+tenacity

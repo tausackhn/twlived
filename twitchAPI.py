@@ -7,7 +7,12 @@ from m3u8 import M3U8
 from typing import Dict, List, Union, Callable, Tuple
 
 
-def method_dispatch(func):
+def method_dispatch(func: Callable) -> Callable:
+    """
+    Single-dispatch class method decorator
+    
+    Works like functools.singledispatch for none-static class methods.
+    """
     dispatcher = functools.singledispatch(func)
 
     def wrapper(*args, **kw):
@@ -19,6 +24,8 @@ def method_dispatch(func):
 
 
 class TwitchAPI:
+    """Class implementing part of Twitch API v5."""
+
     class VideoQuality:
         SOURCE = 'Source'
         HIGH = 'High'
@@ -28,7 +35,7 @@ class TwitchAPI:
         AUDIO_ONLY = 'Audio Only'
 
         @staticmethod
-        def get(quality):
+        def get(quality: str):
             d = {'source': TwitchAPI.VideoQuality.SOURCE,
                  'high': TwitchAPI.VideoQuality.HIGH,
                  'medium': TwitchAPI.VideoQuality.MEDIUM,
@@ -37,14 +44,14 @@ class TwitchAPI:
                  'audio only': TwitchAPI.VideoQuality.AUDIO_ONLY}
             return d[quality]
 
-    API_DOMAIN = 'https://api.twitch.tv'
-    KRAKEN = '/kraken'
-    API = '/api'
-    USHER_DOMAIN = 'https://usher.ttvnw.net'
-    _MAX_LIMIT = 100
-    _DEFAULT_LIMIT = 10
-    _MAX_IDS = 100
-    headers = {'Accept': 'application/vnd.twitchtv.v5+json'}
+    API_DOMAIN: str = 'https://api.twitch.tv'
+    KRAKEN: str = '/kraken'
+    API: str = '/api'
+    USHER_DOMAIN: str = 'https://usher.ttvnw.net'
+    _MAX_LIMIT: int = 100
+    _DEFAULT_LIMIT: int = 10
+    _MAX_IDS: int = 100
+    headers: Dict[str, str] = {'Accept': 'application/vnd.twitchtv.v5+json'}
 
     def __init__(self, client_id: str):
         self.headers.update({'Client-ID': client_id})
