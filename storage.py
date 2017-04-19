@@ -5,19 +5,19 @@ import os
 import shutil
 from tempfile import NamedTemporaryFile
 from time import sleep
+from typing import Dict, List
 from urllib.parse import urljoin
 
 import dateutil.parser
 import m3u8
 import requests
 from tenacity import retry, retry_if_exception_type, wait_fixed
-from typing import Dict, List
 
 
 class TwitchVideo:
     _schema = None
 
-    def __init__(self, info: Dict, playlist_uri: str, file_path: str = None, done=False, temp_dir='.'):
+    def __init__(self, info: Dict, playlist_uri: str, file_path: str = None, temp_dir='.'):
         if not TwitchVideo._schema:
             with open('video_info.schema') as json_data:
                 TwitchVideo._schema = json.load(json_data)
@@ -25,7 +25,7 @@ class TwitchVideo:
         self.info = info
         self.file_path = file_path
         self.playlist_uri = playlist_uri
-        self.download_done = done
+        self.download_done = False
         self.temp_dir = temp_dir
 
         self.title = self.info['title']
@@ -40,7 +40,6 @@ class TwitchVideo:
         def get_newest(list_: List, element=None) -> List:
             if not element:
                 return list_
-
             for i_, _ in reversed(list(enumerate(list_))):
                 if _ == element:
                     return list_[i_ + 1:]
@@ -61,7 +60,7 @@ class TwitchVideo:
             while True:
                 stream_playlist.update()
                 segments: List = get_newest(stream_playlist.segments.uri, last_segment)
-                last_segment = segments[-1] if len(segments) > 0 else last_segment
+                last_segment = segments[-1] if segments else last_segment
                 for i, segment in enumerate(segments):
                     r: requests.Response = download_segment(segment)
                     temp_file.write(r.content)
@@ -100,7 +99,7 @@ class Storage:
                                               date=dateutil.parser.parse(broadcast.created_at))
         new_path = os.path.join(self.path, new_path)
         logging.info(f'Move file to storage: {broadcast.file_path} to {new_path}')
-        os.makedirs(os.path.dirname(new_path))
+        os.makedirs(os.path.dirname(new_path), exist_ok=True)
         shutil.move(broadcast.file_path, new_path)
 
 

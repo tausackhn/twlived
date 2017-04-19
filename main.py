@@ -2,11 +2,12 @@
 import logging.config
 from time import sleep
 
+import requests.exceptions
 from tenacity import retry, retry_if_exception_type, wait_fixed
 
 import config
 from storage import TwitchVideo, Storage
-from twitchAPI import TwitchAPI, NoValidVideo
+from twitch_api import TwitchAPI, NoValidVideo
 
 _config = config.init()
 logging.config.dictConfig(_config['logging'])
@@ -24,14 +25,20 @@ def get_recording_video_info(channel_: str):
     return _twitchAPI.get_recording_video(channel_)
 
 
-while True:
-    if _twitchAPI.get_stream_status(channel) == 'online':
-        video_info = get_recording_video_info(channel)
-        playlist_uri = _twitchAPI.get_video_playlist_uri(_id=video_info['_id'], quality=quality)
-        stream_video: TwitchVideo = TwitchVideo(info=video_info,
-                                                playlist_uri=playlist_uri,
-                                                temp_dir=_config['main']['temp_dir'])
-        stream_video.download()
-        _storage.add_broadcast(stream_video)
-    print('waiting 300 sec')
-    sleep(300)
+@retry(retry=retry_if_exception_type(requests.exceptions.ConnectionError), wait=wait_fixed(2))
+def process():
+    while True:
+        if _twitchAPI.get_stream_status(channel) == 'online':
+            video_info = get_recording_video_info(channel)
+            playlist_uri = _twitchAPI.get_video_playlist_uri(_id=video_info['_id'], quality=quality)
+            stream_video: TwitchVideo = TwitchVideo(info=video_info,
+                                                    playlist_uri=playlist_uri,
+                                                    temp_dir=_config['main']['temp_dir'])
+            stream_video.download()
+            _storage.add_broadcast(stream_video)
+        print('waiting 300 sec')
+        sleep(300)
+
+
+if __name__ == '__main__':
+    process()
