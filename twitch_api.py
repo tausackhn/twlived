@@ -64,7 +64,8 @@ class TwitchAPI:
         logging.debug(f'Retrieving stream status: {channel}')
         channel_id = self._get_user_id(channel)
         r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/streams/{channel_id}', headers=self.headers)
-        return 'online' if r.json()['stream'] else 'offline'
+        # API returns invalid response sometime
+        return 'online' if r.json().get('stream', None) else 'offline'
 
     def get_video_playlist_uri(self, _id: str, quality: str = VideoQuality.SOURCE) -> str:
         logging.debug(f'Retrieving playlist: {_id} {quality}')
