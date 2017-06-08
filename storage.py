@@ -13,28 +13,53 @@ import m3u8
 import requests
 from tenacity import retry, retry_if_exception_type, wait_fixed
 
+from twitch_api import TwitchAPI
+
 
 class TwitchVideo:
     _schema = None
 
-    def __init__(self, info: Dict, playlist_uri: str, file_path: str = None, temp_dir='.'):
+    def __init__(self, info: Dict, api: TwitchAPI, quality: TwitchAPI.VideoQuality, temp_dir: str = '.'):
         if not TwitchVideo._schema:
             with open('video_info.schema') as json_data:
                 TwitchVideo._schema = json.load(json_data)
         self._validate_info(info)
+
         self.info = info
-        self.file_path = file_path
-        self.playlist_uri = playlist_uri
-        self.download_done = False
+        self.api = api
+        self.quality = quality
         self.temp_dir = temp_dir
 
-        self.title = self.info['title']
-        self.broadcast_id = self.info['broadcast_id']
-        self.id = self.info['_id']
-        self.created_at = self.info['created_at']
-        self.game = self.info['game']
-        self.broadcast_type = self.info['broadcast_type']
-        self.channel = self.info['channel']['name']
+        self.download_done = False
+        self.file_path = None
+
+    @property
+    def title(self):
+        return self.info['title']
+
+    @property
+    def broadcast_id(self):
+        return self.info['broadcast_id']
+
+    @property
+    def id(self):
+        return self.info['_id']
+
+    @property
+    def created_at(self):
+        return self.info['created_at']
+
+    @property
+    def game(self):
+        return self.info['game']
+
+    @property
+    def broadcast_type(self):
+        return self.info['broadcast_type']
+
+    @property
+    def channel(self):
+        return self.info['channel']['name']
 
     def download(self):
         def get_newest(list_: List, element=None) -> List:
@@ -43,39 +68,44 @@ class TwitchVideo:
             for i_, _ in reversed(list(enumerate(list_))):
                 if _ == element:
                     return list_[i_ + 1:]
-            return list_
+            return []
 
         @retry(retry=retry_if_exception_type(requests.ConnectionError), wait=wait_fixed(2))
         def download_segment(segment_: str) -> requests.Response:
             return requests.get(segment_)
 
-        stream_playlist: _UpdatableM3U8 = _UpdatableM3U8(self.playlist_uri)
+        stream_playlist: _UpdatableM3U8 = _UpdatableM3U8(self._get_playlist_uri())
         last_segment = None
-        # Disable 'requests' debug message due to many 'get' calls.
-        logging.getLogger('requests').setLevel(logging.WARNING)
         with NamedTemporaryFile(suffix='.ts', delete=False, dir=self.temp_dir) as temp_file:
             self.file_path = temp_file.name
             logging.info(f'Create temporary file {self.file_path}')
             logging.info(f'Start downloading: {self.id}')
             while True:
-                stream_playlist.update()
+                self._update_info()
+                stream_playlist.update(self._get_playlist_uri())
                 segments: List = get_newest(stream_playlist.segments.uri, last_segment)
-                last_segment = segments[-1] if segments else last_segment
+                if segments:
+                    last_segment = segments[-1]
                 for i, segment in enumerate(segments):
                     r: requests.Response = download_segment(segment)
                     temp_file.write(r.content)
                     # TODO вынести вывод прогресса во View
                     print(f'{i+1} of {len(segments)}.')
-                sleep(60)
-                if stream_playlist.data['is_endlist']:
+                if self.info['status'] == 'recorded':
                     self.download_done = True
                     break
-        logging.getLogger('requests').setLevel(logging.DEBUG)
+                sleep(30)
+
+    def _get_playlist_uri(self):
+        return self.api.get_video_playlist_uri(self.id, self.quality)
 
     @staticmethod
     def _validate_info(info: Dict):
         from jsonschema import validate
         validate(info, TwitchVideo._schema)
+
+    def _update_info(self):
+        self.info = self.api.get_video(self.id)
 
 
 class Storage:
@@ -98,8 +128,11 @@ class Storage:
                                               game=_sanitize(broadcast.game, replace_to='_'),
                                               date=dateutil.parser.parse(broadcast.created_at))
         new_path = os.path.join(self.path, new_path)
-        logging.info(f'Move file to storage: {broadcast.file_path} to {new_path}')
+        logging.info(f'Moving file to storage: {broadcast.file_path} to {new_path}')
         os.makedirs(os.path.dirname(new_path), exist_ok=True)
+        while os.path.exists(new_path):
+            name, ext = os.path.splitext(new_path)
+            new_path = name + '*' + ext
         shutil.move(broadcast.file_path, new_path)
 
 
@@ -109,6 +142,6 @@ class _UpdatableM3U8(m3u8.M3U8):
         super(_UpdatableM3U8, self).__init__(content, base_path=base_path)
         self.playlist_uri = playlist_uri
 
-    def update(self):
-        r = requests.get(self.playlist_uri)
+    def update(self, playlist_uri: str = None):
+        r = requests.get(playlist_uri) if playlist_uri else requests.get(self.playlist_uri)
         self.__init__(self.playlist_uri, r.text)

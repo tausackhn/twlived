@@ -2,8 +2,8 @@
 import logging.config
 from time import sleep
 
-import requests.exceptions
-from tenacity import retry, retry_if_exception_type, wait_fixed
+import requests
+from tenacity import retry, retry_if_exception_type, wait_fixed, stop_after_attempt
 
 import config
 from storage import TwitchVideo, Storage
@@ -20,23 +20,24 @@ _storage = Storage(storage_path=_config['storage']['path'],
                    vod_path_template=_config['storage']['vod_path'])
 
 
-@retry(retry=retry_if_exception_type(NoValidVideo), wait=wait_fixed(2))
+@retry(retry=retry_if_exception_type(NoValidVideo), wait=wait_fixed(2), stop=stop_after_attempt(30))
 def get_recording_video_info(channel_: str):
     return _twitchAPI.get_recording_video(channel_)
 
 
-@retry(retry=retry_if_exception_type(requests.exceptions.ConnectionError), wait=wait_fixed(2))
+@retry(retry=retry_if_exception_type(requests.ConnectionError), wait=wait_fixed(2))
 def process():
     while True:
+        print(f'Looking for stream on {channel}')
         if _twitchAPI.get_stream_status(channel) == 'online':
-            video_info = get_recording_video_info(channel)
-            playlist_uri = _twitchAPI.get_video_playlist_uri(_id=video_info['_id'], quality=quality)
-            stream_video: TwitchVideo = TwitchVideo(info=video_info,
-                                                    playlist_uri=playlist_uri,
-                                                    temp_dir=_config['main']['temp_dir'])
+            print('Looking for recording video')
+            stream_video = TwitchVideo(info=get_recording_video_info(channel),
+                                       api=_twitchAPI,
+                                       quality=quality,
+                                       temp_dir=_config['main']['temp_dir'])
             stream_video.download()
             _storage.add_broadcast(stream_video)
-        print('waiting 300 sec')
+        print('No live stream. Waiting 300 sec')
         sleep(300)
 
 

@@ -60,14 +60,39 @@ class TwitchAPI:
     def update_id_storage(self, channels: List[str]) -> None:
         self._get_user_id(channels)
 
-    def get_stream_status(self, channel: str) -> str:
+    def get_stream(self, channel: str) -> str:
         logging.debug(f'Retrieving stream status: {channel}')
         channel_id = self._get_user_id(channel)
         r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/streams/{channel_id}', headers=self.headers)
-        # API returns invalid response sometime
-        return 'online' if r.json().get('stream', None) else 'offline'
+        return r.json()
 
-    def get_video_playlist_uri(self, _id: str, quality: str = VideoQuality.SOURCE) -> str:
+    def get_stream_status(self, channel: str):
+        streams = self.get_streams([channel])
+        return 'online' if streams['_total'] > 0 else 'offline'
+
+    def get_streams(self,
+                    channel: List[str] = None,
+                    game: str = None,
+                    language: str = None,
+                    stream_type: str = None,
+                    limit: int = 25, offset: int = 0) -> Dict:
+        logging.debug(f'Retrieving streams info: {len(channel)} {channel}')
+        if limit > 100:
+            raise TwitchAPIError('Too much streams requested. Must be <= 100')
+        channel_ids = self._get_user_id(channel) if channel else None
+        params = {'channel': ','.join(channel_ids) if channel_ids else None,
+                  'game': game,
+                  'language': language,
+                  'stream_type': stream_type,
+                  'limit': str(limit),
+                  'offset': str(offset)}
+        params = {key: value for key, value in params.items() if value}
+        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/streams/',
+                         headers=self.headers,
+                         params=params)
+        return r.json()
+
+    def get_video_playlist_uri(self, _id: str, quality: VideoQuality = VideoQuality.SOURCE) -> str:
         logging.debug(f'Retrieving playlist: {_id} {quality}')
         vod_id = _id.lstrip('v')
         token = self._get_token(vod_id)
@@ -99,6 +124,12 @@ class TwitchAPI:
             offset += TwitchAPI.MAX_VIDEOS
 
         return videos
+
+    def get_video(self, id_: str) -> Dict:
+        logging.debug(f'Retrieving video: {id_}')
+        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/videos/{id_}',
+                         headers=self.headers)
+        return r.json()
 
     def get_channel_info(self, channel: str) -> Dict:
         logging.debug(f'Retrieving channel info: {channel}')
