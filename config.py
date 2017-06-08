@@ -26,6 +26,7 @@ main:
 storage:
     path: <path where vods should be stored>
     # Python 3.6 f-string. Valid arguments: {title} {id} {type} {channel} {game} {date}
+    # '*' will be added to the new filename if file already exist in storage
     vod_path: <"{channel}/{id} {date:%Y-%m-%d} {title}.ts">
 
 logging:
@@ -39,12 +40,12 @@ logging:
     handlers:
         console:
             class: logging.StreamHandler
-            level: DEBUG
+            level: INFO
             formatter: brief
             stream: ext://sys.stdout
         log_file_handler:
             class: logging.FileHandler
-            level: DEBUG
+            level: INFO
             formatter: extend
             filename: twlived.log
             encoding: utf8
