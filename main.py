@@ -3,7 +3,8 @@ import logging.config
 from time import sleep
 
 import requests
-from tenacity import retry, retry_if_exception_type, wait_fixed, stop_after_attempt
+from tenacity import retry, wait_fixed, stop_after_attempt
+from tenacity import retry_if_exception_type as retry_on
 
 import config
 from storage import TwitchVideo, Storage
@@ -20,12 +21,14 @@ _storage = Storage(storage_path=_config['storage']['path'],
                    vod_path_template=_config['storage']['vod_path'])
 
 
-@retry(retry=retry_if_exception_type(NoValidVideo), wait=wait_fixed(2), stop=stop_after_attempt(30))
+@retry(retry=(retry_on(NoValidVideo) | retry_on(requests.HTTPError)),
+       wait=wait_fixed(10),
+       stop=stop_after_attempt(30))
 def get_recording_video_info(channel_: str):
     return _twitchAPI.get_recording_video(channel_)
 
 
-@retry(retry=retry_if_exception_type(requests.ConnectionError), wait=wait_fixed(2))
+@retry(retry=retry_on(requests.ConnectionError), wait=wait_fixed(2))
 def process():
     while True:
         print(f'Looking for stream on {channel}')

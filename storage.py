@@ -11,7 +11,8 @@ from urllib.parse import urljoin
 import dateutil.parser
 import m3u8
 import requests
-from tenacity import retry, retry_if_exception_type, wait_fixed
+from tenacity import retry, wait_fixed
+from tenacity import retry_if_exception_type as retry_on
 
 from twitch_api import TwitchAPI
 
@@ -70,7 +71,7 @@ class TwitchVideo:
                     return list_[i_ + 1:]
             return []
 
-        @retry(retry=retry_if_exception_type(requests.ConnectionError), wait=wait_fixed(2))
+        @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
         def download_segment(segment_: str) -> requests.Response:
             return requests.get(segment_)
 
@@ -143,5 +144,9 @@ class _UpdatableM3U8(m3u8.M3U8):
         self.playlist_uri = playlist_uri
 
     def update(self, playlist_uri: str = None):
-        r = requests.get(playlist_uri) if playlist_uri else requests.get(self.playlist_uri)
+        @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
+        def get_playlist(uri):
+            return requests.get(uri)
+
+        r = get_playlist(playlist_uri or self.playlist_uri)
         self.__init__(self.playlist_uri, r.text)
