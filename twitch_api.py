@@ -64,6 +64,7 @@ class TwitchAPI:
         logging.debug(f'Retrieving stream status: {channel}')
         channel_id = self._get_user_id(channel)
         r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/streams/{channel_id}', headers=self.headers)
+        r.raise_for_status()
         return r.json()
 
     def get_stream_status(self, channel: str):
@@ -90,6 +91,7 @@ class TwitchAPI:
         r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/streams/',
                          headers=self.headers,
                          params=params)
+        r.raise_for_status()
         return r.json()
 
     def get_video_playlist_uri(self, _id: str, quality: VideoQuality = VideoQuality.SOURCE) -> str:
@@ -118,6 +120,7 @@ class TwitchAPI:
                              params={'broadcast_type': broadcast_type,
                                      'offset': str(offset),
                                      'limit': str(limit)})
+            r.raise_for_status()
             videos.extend(r.json()['videos'])
             if not require_all or not r.json()['videos']:
                 break
@@ -129,6 +132,7 @@ class TwitchAPI:
         logging.debug(f'Retrieving video: {id_}')
         r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/videos/{id_}',
                          headers=self.headers)
+        r.raise_for_status()
         return r.json()
 
     def get_channel_info(self, channel: str) -> Dict:
@@ -136,6 +140,7 @@ class TwitchAPI:
         channel_id = self._get_user_id(channel)
         if channel_id:
             r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/channels/{channel_id}', headers=self.headers)
+            r.raise_for_status()
             return r.json()
         else:
             raise NonexistentChannel(channel)
@@ -150,9 +155,11 @@ class TwitchAPI:
 
     def _get_token(self, vod_id: str) -> Dict:
         logging.debug(f'Retrieving token: {vod_id}')
-        return requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.API}/vods/{vod_id}/access_token',
-                            params={'need_https': 'true'},
-                            headers=self.headers).json()
+        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.API}/vods/{vod_id}/access_token',
+                         params={'need_https': 'true'},
+                         headers=self.headers)
+        r.raise_for_status()
+        return r.json()
 
     def _get_variant_playlist(self, vod_id: str, token: Dict) -> M3U8:
         logging.debug(f'Retrieving variant playlist: {vod_id} {token}')
@@ -162,6 +169,7 @@ class TwitchAPI:
                                  'nauth': token['token'],
                                  'allow_source': 'true',
                                  'allow_audio_only': 'true'})
+        r.raise_for_status()
         return M3U8(r.text)
 
     class _UserIDStorage:
