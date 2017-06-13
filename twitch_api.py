@@ -81,6 +81,8 @@ class TwitchAPI:
         if limit > 100:
             raise TwitchAPIError('Too much streams requested. Must be <= 100')
         channel_ids = self._get_user_id(channel) if channel else None
+        if channel_ids and None in channel_ids:
+            raise NonexistentChannel(f'Some channels in {channel} are not exist')
         params = {'channel': ','.join(channel_ids) if channel_ids else None,
                   'game': game,
                   'language': language,
