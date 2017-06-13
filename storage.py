@@ -97,6 +97,7 @@ class TwitchVideo:
                     break
                 sleep(30)
 
+    @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
     def _get_playlist_uri(self):
         return self.api.get_video_playlist_uri(self.id, self.quality)
 

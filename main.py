@@ -28,7 +28,7 @@ def get_recording_video_info(channel_: str):
     return _twitchAPI.get_recording_video(channel_)
 
 
-@retry(retry=retry_on(requests.ConnectionError), wait=wait_fixed(2))
+@retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
 def process():
     while True:
         print(f'Looking for stream on {channel}')
