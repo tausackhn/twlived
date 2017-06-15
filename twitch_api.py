@@ -2,6 +2,7 @@
 import functools
 import logging
 from typing import Dict, List, Union, Callable, Tuple
+from urllib.parse import urljoin
 
 import requests
 from m3u8 import M3U8
@@ -52,8 +53,9 @@ class TwitchAPI:
     MAX_IDS: int = 100
     headers: Dict[str, str] = {'Accept': 'application/vnd.twitchtv.v5+json'}
 
-    def __init__(self, client_id: str):
+    def __init__(self, client_id: str, fetch: Callable = requests.get):
         self.headers.update({'Client-ID': client_id})
+        self._fetch = fetch
         # Take unbound method. Make an usual function using partial()
         self._get_user_id = self._UserIDStorage(functools.partial(TwitchAPI._get_user_id_, self))
 
@@ -63,7 +65,7 @@ class TwitchAPI:
     def get_stream(self, channel: str) -> str:
         logging.debug(f'Retrieving stream status: {channel}')
         channel_id = self._get_user_id(channel)
-        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/streams/{channel_id}', headers=self.headers)
+        r = self._request_get(f'streams/{channel_id}')
         r.raise_for_status()
         return r.json()
 
@@ -90,10 +92,7 @@ class TwitchAPI:
                   'limit': str(limit),
                   'offset': str(offset)}
         params = {key: value for key, value in params.items() if value}
-        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/streams/',
-                         headers=self.headers,
-                         params=params)
-        r.raise_for_status()
+        r = self._request_get('streams', params=params)
         return r.json()
 
     def get_video_playlist_uri(self, _id: str, quality: VideoQuality = VideoQuality.SOURCE) -> str:
@@ -117,12 +116,10 @@ class TwitchAPI:
         videos: List[Dict] = []
 
         while True:
-            r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/channels/{channel_id}/videos',
-                             headers=self.headers,
-                             params={'broadcast_type': broadcast_type,
-                                     'offset': str(offset),
-                                     'limit': str(limit)})
-            r.raise_for_status()
+            r = self._request_get(f'channels/{channel_id}/videos',
+                                  params={'broadcast_type': broadcast_type,
+                                          'offset': str(offset),
+                                          'limit': str(limit)})
             videos.extend(r.json()['videos'])
             if not require_all or not r.json()['videos']:
                 break
@@ -132,17 +129,14 @@ class TwitchAPI:
 
     def get_video(self, id_: str) -> Dict:
         logging.debug(f'Retrieving video: {id_}')
-        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/videos/{id_}',
-                         headers=self.headers)
-        r.raise_for_status()
+        r = self._request_get(f'videos/{id_}')
         return r.json()
 
     def get_channel_info(self, channel: str) -> Dict:
         logging.debug(f'Retrieving channel info: {channel}')
         channel_id = self._get_user_id(channel)
         if channel_id:
-            r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/channels/{channel_id}', headers=self.headers)
-            r.raise_for_status()
+            r = self._request_get(f'channels/{channel_id}')
             return r.json()
         else:
             raise NonexistentChannel(channel)
@@ -157,21 +151,18 @@ class TwitchAPI:
 
     def _get_token(self, vod_id: str) -> Dict:
         logging.debug(f'Retrieving token: {vod_id}')
-        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.API}/vods/{vod_id}/access_token',
-                         params={'need_https': 'true'},
-                         headers=self.headers)
-        r.raise_for_status()
+        r = self._request_get(f'vods/{vod_id}/access_token',
+                              domain=f'{TwitchAPI.API_DOMAIN}{TwitchAPI.API}/',
+                              params={'need_https': 'true'})
         return r.json()
 
     def _get_variant_playlist(self, vod_id: str, token: Dict) -> M3U8:
         logging.debug(f'Retrieving variant playlist: {vod_id} {token}')
-        r = requests.get(f'{TwitchAPI.USHER_DOMAIN}/vod/{vod_id}',
-                         headers=self.headers,
-                         params={'nauthsig': token['sig'],
-                                 'nauth': token['token'],
-                                 'allow_source': 'true',
-                                 'allow_audio_only': 'true'})
-        r.raise_for_status()
+        r = self._request_get(f'vod/{vod_id}', domain=TwitchAPI.USHER_DOMAIN,
+                              params={'nauthsig': token['sig'],
+                                      'nauth': token['token'],
+                                      'allow_source': 'true',
+                                      'allow_audio_only': 'true'})
         return M3U8(r.text)
 
     class _UserIDStorage:
@@ -208,11 +199,7 @@ class TwitchAPI:
         logging.debug(f'Retrieving user-id: {len(usernames)} {usernames}')
         if len(usernames) > TwitchAPI.MAX_IDS:
             raise TwitchAPIError('Too much usernames. Must be <= 100')
-        r = requests.get(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/users',
-                         headers=self.headers,
-                         params={'login': ','.join(usernames)})
-        if not r.ok:
-            raise TwitchAPIError(f"{r.json()['error']}. {r.json()['message']}")
+        r = self._request_get('users', params={'login': ','.join(usernames)})
         users = r.json()['users']
         existing_usernames = [user['name'] for user in users]
         # Missing usernames
@@ -220,6 +207,15 @@ class TwitchAPI:
         # Existing usernames
         ids.extend([(user['name'], user['_id']) for user in users])
         return ids
+
+    def _request_get(self, path, domain=None, params=None):
+        if not domain:
+            url = urljoin(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/', path)
+        else:
+            url = urljoin(domain, path)
+        r = self._fetch(url, params, headers=self.headers)
+        r.raise_for_status()
+        return r
 
 
 class TwitchAPIError(Exception):

@@ -10,10 +10,8 @@ from urllib.parse import urljoin
 
 import dateutil.parser
 import m3u8
-import requests
-from tenacity import retry, wait_fixed
-from tenacity import retry_if_exception_type as retry_on
 
+from network import request_get_retried
 from twitch_api import TwitchAPI
 
 
@@ -71,9 +69,8 @@ class TwitchVideo:
                     return list_[i_ + 1:]
             return []
 
-        @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
-        def download_segment(segment_: str) -> requests.Response:
-            return requests.get(segment_)
+        def download_segment(segment_: str):
+            return request_get_retried(segment_)
 
         stream_playlist: _UpdatableM3U8 = _UpdatableM3U8(self._get_playlist_uri())
         last_segment = None
@@ -88,16 +85,15 @@ class TwitchVideo:
                 if segments:
                     last_segment = segments[-1]
                 for i, segment in enumerate(segments):
-                    r: requests.Response = download_segment(segment)
+                    r = download_segment(segment)
                     temp_file.write(r.content)
-                    # TODO вынести вывод прогресса во View
+                    # TODO вынести вывод прогресса
                     print(f'{i+1} of {len(segments)}.')
                 if self.info['status'] == 'recorded':
                     self.download_done = True
                     break
                 sleep(30)
 
-    @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
     def _get_playlist_uri(self):
         return self.api.get_video_playlist_uri(self.id, self.quality)
 
@@ -145,9 +141,8 @@ class _UpdatableM3U8(m3u8.M3U8):
         self.playlist_uri = playlist_uri
 
     def update(self, playlist_uri: str = None):
-        @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
         def get_playlist(uri):
-            return requests.get(uri)
+            return request_get_retried(uri)
 
         r = get_playlist(playlist_uri or self.playlist_uri)
         self.__init__(self.playlist_uri, r.text)
