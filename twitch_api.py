@@ -173,7 +173,7 @@ class TwitchAPI:
 
     def _get_variant_playlist(self, vod_id: str, token: Dict) -> M3U8:
         logging.debug(f'Retrieving variant playlist: {vod_id} {token}')
-        r = self._request_get(f'vod/{vod_id}.m3u8', domain=TwitchAPI.USHER_DOMAIN,
+        r = self._request_get(f'vod/{vod_id}', domain=TwitchAPI.USHER_DOMAIN,
                               params={'nauthsig': token['sig'],
                                       'nauth': token['token'],
                                       'allow_source': 'true',
