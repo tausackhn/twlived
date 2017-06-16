@@ -1,6 +1,8 @@
 # encoding=utf-8
 import functools
+import json
 import logging
+from time import time as utc
 from typing import Dict, List, Union, Callable, Tuple
 from urllib.parse import urljoin
 
@@ -20,6 +22,18 @@ def method_dispatch(func: Callable) -> Callable:
 
     wrapper.register = dispatcher.register
     functools.update_wrapper(wrapper, func)
+    return wrapper
+
+
+def token_storage(f):
+    storage = dict()
+
+    def wrapper(self, vod_id):
+        if vod_id not in storage or storage[vod_id][1] < utc():
+            token = f(self, vod_id)
+            storage[vod_id] = (token, json.loads(token['token'])['expires'])
+        return storage[vod_id][0]
+
     return wrapper
 
 
@@ -149,6 +163,7 @@ class TwitchAPI:
         except StopIteration as _:
             raise NoValidVideo(f'No recording video at {channel}') from _
 
+    @token_storage
     def _get_token(self, vod_id: str) -> Dict:
         logging.debug(f'Retrieving token: {vod_id}')
         r = self._request_get(f'vods/{vod_id}/access_token',
@@ -158,7 +173,7 @@ class TwitchAPI:
 
     def _get_variant_playlist(self, vod_id: str, token: Dict) -> M3U8:
         logging.debug(f'Retrieving variant playlist: {vod_id} {token}')
-        r = self._request_get(f'vod/{vod_id}', domain=TwitchAPI.USHER_DOMAIN,
+        r = self._request_get(f'vod/{vod_id}.m3u8', domain=TwitchAPI.USHER_DOMAIN,
                               params={'nauthsig': token['sig'],
                                       'nauth': token['token'],
                                       'allow_source': 'true',
