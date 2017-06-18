@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from tempfile import NamedTemporaryFile
-from time import sleep
+from time import sleep, time
 from typing import Dict, List
 from urllib.parse import urljoin
 
@@ -78,17 +78,34 @@ class TwitchVideo:
             self.file_path = temp_file.name
             logging.info(f'Create temporary file {self.file_path}')
             logging.info(f'Start downloading: {self.id}')
+            total_completed_segments = 0
             while True:
                 self._update_info()
                 stream_playlist.update(self._get_playlist_uri())
                 segments: List = get_newest(stream_playlist.segments.uri, last_segment)
+                total_segments = len(stream_playlist.segments.uri)
+                completed_segments = 0
                 if segments:
                     last_segment = segments[-1]
+                start_time = time()
                 for i, segment in enumerate(segments):
                     r = download_segment(segment)
                     temp_file.write(r.content)
-                    # TODO вынести вывод прогресса
-                    print(f'{i+1} of {len(segments)}.')
+                    completed_segments += 1
+                    total_completed_segments += 1
+                    # Trying to avoid slow twitch server. It's possible to get a better server after updating.
+                    # 11 segments x 10 seconds = 110 seconds. Downloading should be faster than VOD updating.
+                    if i % 10 == 0:
+                        if time() - start_time > 50:
+                            last_segment = segment
+                            break
+                        else:
+                            start_time = time()
+                    # TODO: change to call Views function
+                    print(f"Last: {completed_segments:>5}/{len(segments):>5}  "
+                          f"Total: {total_completed_segments:>5}/{total_segments:>5}")
+                # TODO: write a better detecting method for finished VODs.
+                # TwitchAPI bug occurs sometime. Finished VOD can have 'status' == 'recording'.
                 if self.info['status'] == 'recorded':
                     self.download_done = True
                     break

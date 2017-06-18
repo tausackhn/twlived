@@ -26,6 +26,11 @@ def method_dispatch(func: Callable) -> Callable:
 
 
 def token_storage(f):
+    """
+    Cached storage for playlist tokens.
+    Token expires after ~21 hours. Saves one request, when one gets VOD playlist
+    """
+    # FIXME: implement deleting time expired tokens
     storage = dict()
 
     def wrapper(self, vod_id):
@@ -181,6 +186,10 @@ class TwitchAPI:
         return M3U8(r.text)
 
     class _UserIDStorage:
+        """
+        Class, which caches {username: user ID} for API methods.
+        Saves one request, when one uses method by username.
+        """
         cache = {}
 
         def __init__(self, get_items: Callable[[List[str]], List[Tuple[str, Union[str, None]]]]):
