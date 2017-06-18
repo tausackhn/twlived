@@ -229,7 +229,6 @@ class TwitchAPI:
         else:
             url = urljoin(domain, path)
         r = self._fetch(url, params, headers=self.headers)
-        r.raise_for_status()
         return r
 
 

@@ -8,4 +8,6 @@ from tenacity import retry_if_exception_type as retry_on
        wait=wait_fixed(5),
        stop=stop_after_attempt(30))
 def request_get_retried(*args, **kwargs):
-    return requests.get(*args, **kwargs)
+    r = requests.get(*args, **kwargs)
+    r.raise_for_status()
+    return r
