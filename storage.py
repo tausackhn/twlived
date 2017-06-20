@@ -4,16 +4,14 @@ import logging
 import os
 import shutil
 from tempfile import NamedTemporaryFile
-from time import sleep
+from time import sleep, time
 from typing import Dict, List
 from urllib.parse import urljoin
 
 import dateutil.parser
 import m3u8
-import requests
-from tenacity import retry, wait_fixed
-from tenacity import retry_if_exception_type as retry_on
 
+from network import request_get_retried
 from twitch_api import TwitchAPI
 
 
@@ -71,9 +69,8 @@ class TwitchVideo:
                     return list_[i_ + 1:]
             return []
 
-        @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
-        def download_segment(segment_: str) -> requests.Response:
-            return requests.get(segment_)
+        def download_segment(segment_: str):
+            return request_get_retried(segment_)
 
         stream_playlist: _UpdatableM3U8 = _UpdatableM3U8(self._get_playlist_uri())
         last_segment = None
@@ -81,23 +78,39 @@ class TwitchVideo:
             self.file_path = temp_file.name
             logging.info(f'Create temporary file {self.file_path}')
             logging.info(f'Start downloading: {self.id}')
+            total_completed_segments = 0
             while True:
                 self._update_info()
                 stream_playlist.update(self._get_playlist_uri())
                 segments: List = get_newest(stream_playlist.segments.uri, last_segment)
+                total_segments = len(stream_playlist.segments.uri)
+                completed_segments = 0
                 if segments:
                     last_segment = segments[-1]
+                start_time = time()
                 for i, segment in enumerate(segments):
-                    r: requests.Response = download_segment(segment)
+                    r = download_segment(segment)
                     temp_file.write(r.content)
-                    # TODO вынести вывод прогресса во View
-                    print(f'{i+1} of {len(segments)}.')
+                    completed_segments += 1
+                    total_completed_segments += 1
+                    # Trying to avoid slow twitch server. It's possible to get a better server after updating.
+                    # 11 segments x 10 seconds = 110 seconds. Downloading should be faster than VOD updating.
+                    if i % 10 == 0:
+                        if time() - start_time > 50:
+                            last_segment = segment
+                            break
+                        else:
+                            start_time = time()
+                    # TODO: change to call Views function
+                    print(f"Last: {completed_segments:>5}/{len(segments):>5}  "
+                          f"Total: {total_completed_segments:>5}/{total_segments:>5}")
+                # TODO: write a better detecting method for finished VODs.
+                # TwitchAPI bug occurs sometime. Finished VOD can have 'status' == 'recording'.
                 if self.info['status'] == 'recorded':
                     self.download_done = True
                     break
                 sleep(30)
 
-    @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
     def _get_playlist_uri(self):
         return self.api.get_video_playlist_uri(self.id, self.quality)
 
@@ -145,9 +158,8 @@ class _UpdatableM3U8(m3u8.M3U8):
         self.playlist_uri = playlist_uri
 
     def update(self, playlist_uri: str = None):
-        @retry(retry=(retry_on(requests.ConnectionError) | retry_on(requests.HTTPError)), wait=wait_fixed(2))
         def get_playlist(uri):
-            return requests.get(uri)
+            return request_get_retried(uri)
 
         r = get_playlist(playlist_uri or self.playlist_uri)
         self.__init__(self.playlist_uri, r.text)
