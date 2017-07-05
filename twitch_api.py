@@ -17,6 +17,7 @@ def method_dispatch(func: Callable) -> Callable:
     """
     dispatcher = functools.singledispatch(func)
 
+    @functools.wraps(func)
     def wrapper(*args, **kw):
         return dispatcher.dispatch(args[1].__class__)(*args, **kw)
 
@@ -25,7 +26,7 @@ def method_dispatch(func: Callable) -> Callable:
     return wrapper
 
 
-def token_storage(f):
+def token_storage(func: Callable) -> Callable:
     """
     Cached storage for playlist tokens.
     Token expires after ~21 hours. Saves one request, when one gets VOD playlist
@@ -33,9 +34,10 @@ def token_storage(f):
     # FIXME: implement deleting time expired tokens
     storage = dict()
 
+    @functools.wraps(func)
     def wrapper(self, vod_id):
         if vod_id not in storage or storage[vod_id][1] < utc():
-            token = f(self, vod_id)
+            token = func(self, vod_id)
             storage[vod_id] = (token, json.loads(token['token'])['expires'])
         return storage[vod_id][0]
 

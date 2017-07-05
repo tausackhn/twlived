@@ -4,7 +4,8 @@ import logging
 import os
 import shutil
 from tempfile import NamedTemporaryFile
-from time import sleep, time
+from time import monotonic as clock
+from time import sleep
 from typing import Dict, List
 from urllib.parse import urljoin
 
@@ -13,12 +14,13 @@ import m3u8
 
 from network import request_get_retried
 from twitch_api import TwitchAPI
+from view import ViewEvent
 
 
 class TwitchVideo:
     _schema = None
 
-    def __init__(self, info: Dict, api: TwitchAPI, quality: TwitchAPI.VideoQuality, temp_dir: str = '.'):
+    def __init__(self, view, info: Dict, api: TwitchAPI, quality: TwitchAPI.VideoQuality, temp_dir: str = '.'):
         if not TwitchVideo._schema:
             with open('video_info.schema') as json_data:
                 TwitchVideo._schema = json.load(json_data)
@@ -28,6 +30,7 @@ class TwitchVideo:
         self.api = api
         self.quality = quality
         self.temp_dir = temp_dir
+        self.view = view
 
         self.download_done = False
         self.file_path = None
@@ -60,6 +63,10 @@ class TwitchVideo:
     def channel(self):
         return self.info['channel']['name']
 
+    @property
+    def is_recording(self):
+        return self.info['status'] != 'recorded'
+
     def download(self):
         def get_newest(list_: List, element=None) -> List:
             if not element:
@@ -70,46 +77,54 @@ class TwitchVideo:
             return []
 
         def download_segment(segment_: str):
-            return request_get_retried(segment_)
+            return request_get_retried(segment_).content
 
-        stream_playlist: _UpdatableM3U8 = _UpdatableM3U8(self._get_playlist_uri())
-        last_segment = None
+        def chunks(l: list, n: int):
+            for j in range(0, len(l), n):
+                yield l[j:j + n]
+
+        playlist = _UpdatableM3U8(self._get_playlist_uri())
         with NamedTemporaryFile(suffix='.ts', delete=False, dir=self.temp_dir) as temp_file:
             self.file_path = temp_file.name
             logging.info(f'Create temporary file {self.file_path}')
             logging.info(f'Start downloading: {self.id}')
+            info = type('Info', (object,), dict(id=self.id, channel=self.channel))
+            self.view(ViewEvent.StartDownloading, info)
+            last_downloaded = None
             total_completed_segments = 0
             while True:
-                self._update_info()
-                stream_playlist.update(self._get_playlist_uri())
-                segments: List = get_newest(stream_playlist.segments.uri, last_segment)
-                total_segments = len(stream_playlist.segments.uri)
+                segments = get_newest(playlist.segments.uri, last_downloaded)
+                total_segments = len(playlist.segments.uri)
                 completed_segments = 0
-                if segments:
-                    last_segment = segments[-1]
-                start_time = time()
-                for i, segment in enumerate(segments):
-                    r = download_segment(segment)
-                    temp_file.write(r.content)
-                    completed_segments += 1
-                    total_completed_segments += 1
-                    # Trying to avoid slow twitch server. It's possible to get a better server after updating.
-                    # 11 segments x 10 seconds = 110 seconds. Downloading should be faster than VOD updating.
-                    if i % 10 == 0:
-                        if time() - start_time > 50:
-                            last_segment = segment
-                            break
-                        else:
-                            start_time = time()
-                    # TODO: change to call Views function
-                    print(f"Last: {completed_segments:>5}/{len(segments):>5}  "
-                          f"Total: {total_completed_segments:>5}/{total_segments:>5}")
+                is_slow = False
+                chunks_downloaded = False
+                for chunk in chunks(segments, 10):
+                    start_time = clock()
+                    for segment in chunk:
+                        content = download_segment(segment)
+                        temp_file.write(content)
+                        last_downloaded = segment
+                        completed_segments += 1
+                        total_completed_segments += 1
+                        info = type('Info', (object,), dict(completed_segments=completed_segments,
+                                                            segments=len(segments),
+                                                            total_completed_segments=total_completed_segments,
+                                                            total_segments=total_segments))
+                        self.view(ViewEvent.ProgressInfo, info)
+                    if clock() - start_time > 50:
+                        is_slow = True
+                        break
+                else:
+                    chunks_downloaded = True
                 # TODO: write a better detecting method for finished VODs.
                 # TwitchAPI bug occurs sometime. Finished VOD can have 'status' == 'recording'.
-                if self.info['status'] == 'recorded':
-                    self.download_done = True
-                    break
-                sleep(30)
+                if chunks_downloaded:
+                    if self.is_recording:
+                        sleep(30)
+                    else:
+                        break
+                self._update_info()
+                playlist.update(self._get_playlist_uri() if is_slow else None)
 
     def _get_playlist_uri(self):
         return self.api.get_video_playlist_uri(self.id, self.quality)
@@ -152,14 +167,15 @@ class Storage:
 
 
 class _UpdatableM3U8(m3u8.M3U8):
-    def __init__(self, playlist_uri: str, content: str = None):
+    def __init__(self, playlist_uri: str):
         base_path: str = urljoin(playlist_uri, '.').rstrip('/')
-        super(_UpdatableM3U8, self).__init__(content, base_path=base_path)
+        r = self._get_playlist(playlist_uri)
+        super(_UpdatableM3U8, self).__init__(r.text, base_path=base_path)
         self.playlist_uri = playlist_uri
 
     def update(self, playlist_uri: str = None):
-        def get_playlist(uri):
-            return request_get_retried(uri)
+        self.__init__(playlist_uri or self.playlist_uri)
 
-        r = get_playlist(playlist_uri or self.playlist_uri)
-        self.__init__(self.playlist_uri, r.text)
+    @staticmethod
+    def _get_playlist(uri):
+        return request_get_retried(uri)
