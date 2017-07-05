@@ -28,6 +28,11 @@ storage:
     # Python 3.6 f-string. Valid arguments: {title} {id} {type} {channel} {game} {date}
     # '*' will be added to the new filename if file already exist in storage
     vod_path: <"{channel}/{id} {date:%Y-%m-%d} {title}.ts">
+    
+telegram:
+    enabled: False
+    api_token: <Telegram bot API token>
+    chat_id: <your chat id>
 
 logging:
     version: 1
