@@ -93,15 +93,15 @@ class TwitchVideo:
             last_downloaded = None
             total_completed_segments = 0
             while True:
-                segments = get_newest(playlist.segments.uri, last_downloaded)
-                total_segments = len(playlist.segments.uri)
+                segments = get_newest(playlist.files, last_downloaded)
+                total_segments = len(playlist.files)
                 completed_segments = 0
                 is_slow = False
                 chunks_downloaded = False
                 for chunk in chunks(segments, 10):
                     start_time = clock()
                     for segment in chunk:
-                        content = download_segment(segment)
+                        content = download_segment(playlist.base_path + segment)
                         temp_file.write(content)
                         last_downloaded = segment
                         completed_segments += 1
@@ -122,6 +122,7 @@ class TwitchVideo:
                     if self.is_recording:
                         sleep(30)
                     else:
+                        self.view(ViewEvent.StopDownloading)
                         break
                 self._update_info()
                 playlist.update(self._get_playlist_uri() if is_slow else None)
