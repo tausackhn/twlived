@@ -101,7 +101,7 @@ class TwitchVideo:
                 for chunk in chunks(segments, 10):
                     start_time = clock()
                     for segment in chunk:
-                        content = download_segment(playlist.base_path + segment)
+                        content = download_segment(playlist.base_path + '/' + segment)
                         temp_file.write(content)
                         last_downloaded = segment
                         completed_segments += 1
