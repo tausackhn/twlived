@@ -29,9 +29,10 @@ class View:
             print(f"\rLast: {info.completed_segments:>5}/{info.segments:>5}  "
                   f"Total: {info.total_completed_segments:>5}/{info.total_segments:>5}", end='')
         elif event is ViewEvent.StopDownloading:
+            print('')
             if self._bot:
                 self._bot.send_message('Downloading successfully')
         elif event is ViewEvent.MovingFile:
             pass
         elif event is ViewEvent.WaitStream:
-            print('No live stream. Waiting 300 sec')
+            print('No live stream. Waiting 15 min')

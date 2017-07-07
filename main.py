@@ -49,7 +49,7 @@ def process():
             stream_video.download()
             _storage.add_broadcast(stream_video)
         _view(ViewEvent.WaitStream)
-        sleep(300)
+        sleep(900)
 
 
 if __name__ == '__main__':
