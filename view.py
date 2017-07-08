@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from typing import Optional, Any
 
 from telegram_bot import TelegramBot
 
@@ -14,10 +15,10 @@ class ViewEvent(Enum):
 
 
 class View:
-    def __init__(self, telegram_bot: TelegramBot = None):
+    def __init__(self, telegram_bot: Optional[TelegramBot] = None) -> None:
         self._bot = telegram_bot
 
-    def __call__(self, event: ViewEvent, info=None):
+    def __call__(self, event: ViewEvent, info: Any = None) -> None:
         if event is ViewEvent.CheckStatus:
             print(f'Looking for stream on {info}')
         elif event is ViewEvent.WaitLiveVideo:

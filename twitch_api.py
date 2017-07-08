@@ -3,14 +3,16 @@ import functools
 import json
 import logging
 from time import time as utc
-from typing import Dict, List, Union, Callable, Tuple
+from typing import Dict, List, Callable, Tuple, Any, TypeVar, Optional
 from urllib.parse import urljoin
 
 import requests
-from m3u8 import M3U8
+from m3u8 import M3U8  # type: ignore
+
+T = TypeVar('T')
 
 
-def method_dispatch(func: Callable) -> Callable:
+def method_dispatch(func: Callable[..., T]) -> Callable[..., T]:
     """
     Single-dispatch class method decorator
     Works like functools.singledispatch for none-static class methods.
@@ -18,24 +20,23 @@ def method_dispatch(func: Callable) -> Callable:
     dispatcher = functools.singledispatch(func)
 
     @functools.wraps(func)
-    def wrapper(*args, **kw):
-        return dispatcher.dispatch(args[1].__class__)(*args, **kw)
+    def wrapper(*args: Any, **_: Any) -> T:
+        return dispatcher.dispatch(args[1].__class__)(*args, **_)
 
     wrapper.register = dispatcher.register
-    functools.update_wrapper(wrapper, func)
     return wrapper
 
 
-def token_storage(func: Callable) -> Callable:
+def token_storage(func: Callable[[Any, str], Dict]) -> Callable[[Any, str], Dict]:
     """
     Cached storage for playlist tokens.
     Token expires after ~21 hours. Saves one request, when one gets VOD playlist
     """
     # FIXME: implement deleting time expired tokens
-    storage = dict()
+    storage: Dict[str, Tuple[Dict, int]] = {}
 
     @functools.wraps(func)
-    def wrapper(self, vod_id):
+    def wrapper(self: Any, vod_id: str) -> Dict:
         if vod_id not in storage or storage[vod_id][1] < utc():
             token = func(self, vod_id)
             storage[vod_id] = (token, json.loads(token['token'])['expires'])
@@ -56,7 +57,7 @@ class TwitchAPI:
         AUDIO_ONLY = 'Audio Only'
 
         @staticmethod
-        def get(quality: str):
+        def get(quality: str) -> str:
             qualities = {'source': TwitchAPI.VideoQuality.SOURCE,
                          'high': TwitchAPI.VideoQuality.HIGH,
                          'medium': TwitchAPI.VideoQuality.MEDIUM,
@@ -74,7 +75,7 @@ class TwitchAPI:
     MAX_IDS: int = 100
     headers: Dict[str, str] = {'Accept': 'application/vnd.twitchtv.v5+json'}
 
-    def __init__(self, client_id: str, fetch: Callable = requests.get):
+    def __init__(self, client_id: str, fetch: Callable = requests.get) -> None:
         self.headers.update({'Client-ID': client_id})
         self._fetch = fetch
         # Take unbound method. Make an usual function using partial()
@@ -83,24 +84,27 @@ class TwitchAPI:
     def update_id_storage(self, channels: List[str]) -> None:
         self._get_user_id(channels)
 
-    def get_stream(self, channel: str) -> str:
+    def get_stream(self, channel: str) -> Dict:
         logging.debug(f'Retrieving stream status: {channel}')
         channel_id = self._get_user_id(channel)
         r = self._request_get(f'streams/{channel_id}')
         r.raise_for_status()
         return r.json()
 
-    def get_stream_status(self, channel: str):
+    def get_stream_status(self, channel: str) -> str:
         streams = self.get_streams([channel])
         return 'online' if streams['_total'] > 0 else 'offline'
 
     def get_streams(self,
-                    channel: List[str] = None,
-                    game: str = None,
-                    language: str = None,
-                    stream_type: str = None,
+                    channel: Optional[List[str]] = None,
+                    game: Optional[str] = None,
+                    language: Optional[str] = None,
+                    stream_type: Optional[str] = None,
                     limit: int = 25, offset: int = 0) -> Dict:
-        logging.debug(f'Retrieving streams info: {len(channel)} {channel}')
+        if isinstance(channel, list):
+            logging.debug(f'Retrieving streams info: {len(channel)} {channel}')
+        else:
+            logging.debug(f'Retrieving streams info: {game}, {language}, {stream_type}, {limit}, {offset}')
         if limit > 100:
             raise TwitchAPIError('Too much streams requested. Must be <= 100')
         channel_ids = self._get_user_id(channel) if channel else None
@@ -116,7 +120,7 @@ class TwitchAPI:
         r = self._request_get('streams', params=params)
         return r.json()
 
-    def get_video_playlist_uri(self, _id: str, quality: VideoQuality = VideoQuality.SOURCE) -> str:
+    def get_video_playlist_uri(self, _id: str, quality: str = VideoQuality.SOURCE) -> str:
         logging.debug(f'Retrieving playlist: {_id} {quality}')
         vod_id = _id.lstrip('v')
         token = self._get_token(vod_id)
@@ -192,13 +196,13 @@ class TwitchAPI:
         Class, which caches {username: user ID} for API methods.
         Saves one request, when one uses method by username.
         """
-        cache = {}
+        cache: Dict[str, Optional[str]] = {}
 
-        def __init__(self, get_items: Callable[[List[str]], List[Tuple[str, Union[str, None]]]]):
+        def __init__(self, get_items: Callable[[List[str]], List[Tuple[str, Optional[str]]]]) -> None:
             self._get_items = get_items
 
         @method_dispatch
-        def __call__(self, arg):
+        def __call__(self, arg: Any) -> Any:
             raise ValueError
 
         @__call__.register(str)
@@ -206,7 +210,7 @@ class TwitchAPI:
             return self([username])[0]
 
         @__call__.register(list)
-        def _list(self, usernames: List[str]) -> List[Union[str, None]]:
+        def _list(self, usernames: List[str]) -> List[Optional[str]]:
             logging.debug(f'Retrieving user-id from IDStorage: {len(usernames)} {usernames}')
             missing_names = [_ for _ in usernames if _ not in self.cache]
             if missing_names:
@@ -221,20 +225,20 @@ class TwitchAPI:
                 ids = self._get_items(chunk)
                 self.cache.update(ids)
 
-    def _get_user_id_(self, usernames: List[str]) -> List[Tuple[str, Union[str, None]]]:
+    def _get_user_id_(self, usernames: List[str]) -> List[Tuple[str, Optional[str]]]:
         logging.debug(f'Retrieving user-id: {len(usernames)} {usernames}')
         if len(usernames) > TwitchAPI.MAX_IDS:
             raise TwitchAPIError('Too much usernames. Must be <= 100')
         r = self._request_get('users', params={'login': ','.join(usernames)})
         users = r.json()['users']
-        existing_usernames = [user['name'] for user in users]
-        # Missing usernames
-        ids = [(username, None) for username in usernames if username not in existing_usernames]
+        existing_usernames = {user['name'] for user in users}
         # Existing usernames
-        ids.extend([(user['name'], user['_id']) for user in users])
+        ids = [(user['name'], user['_id']) for user in users]
+        # Missing usernames
+        ids.extend([(username, None) for username in usernames if username not in existing_usernames])
         return ids
 
-    def _request_get(self, path, domain=None, params=None):
+    def _request_get(self, path: str, domain: Optional[str] = None, params: Optional[Dict] = None) -> requests.Response:
         if not domain:
             url = urljoin(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/', path)
         else:

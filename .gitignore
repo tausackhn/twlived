@@ -20,9 +20,6 @@
 .idea/gradle.xml
 .idea/libraries
 
-# Mongo Explorer plugin:
-.idea/mongoSettings.xml
-
 ## File-based project format:
 *.iws
 
@@ -45,7 +42,6 @@ fabric.properties
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[cod]
 *$py.class
 
 # C extensions
@@ -133,5 +129,7 @@ ENV/
 
 # Rope project settings
 .ropeproject
-.idea/
+
 config.yaml
+.mypy_cache/
+.pylintrc

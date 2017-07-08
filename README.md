@@ -4,7 +4,7 @@ Python 3.6+
 
 This script waits for live (recording) broadcasts on [Twitch.TV](https://twitch.tv/) and records it then.
 
-The script **doesn't** using `ffmpeg` because twitch.tv live broadcasting system is unstable.
+The script **doesn't** use `ffmpeg` because twitch.tv live broadcasting system is unstable.
 `ffmpeg` hangs sometimes and it can't be caught properly to restart downloading. 
 Basic idea is to download already recording broadcast which'll be muted after stream ending in 15 min.
 Downloaded broadcasts match perfectly to vods `twitch.tv/videos/v******`.

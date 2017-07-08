@@ -6,21 +6,23 @@ import shutil
 from tempfile import NamedTemporaryFile
 from time import monotonic as clock
 from time import sleep
-from typing import Dict, List
+from typing import Dict, List, Any, Optional, TypeVar, Iterator
 from urllib.parse import urljoin
 
 import dateutil.parser
-import m3u8
+from m3u8 import M3U8  # type: ignore
 
 from network import request_get_retried
 from twitch_api import TwitchAPI
-from view import ViewEvent
+from view import ViewEvent, View
+
+T = TypeVar('T')
 
 
 class TwitchVideo:
     _schema = None
 
-    def __init__(self, view, info: Dict, api: TwitchAPI, quality: TwitchAPI.VideoQuality, temp_dir: str = '.'):
+    def __init__(self, view: View, info: Dict[str, Any], api: TwitchAPI, quality: str, temp_dir: str = '.') -> None:
         if not TwitchVideo._schema:
             with open('video_info.schema') as json_data:
                 TwitchVideo._schema = json.load(json_data)
@@ -32,61 +34,60 @@ class TwitchVideo:
         self.temp_dir = temp_dir
         self.view = view
 
-        self.download_done = False
-        self.file_path = None
+        self.download_done: bool = False
+        self.file = NamedTemporaryFile(suffix='.ts', delete=False, dir=self.temp_dir)
 
     @property
-    def title(self):
+    def title(self) -> str:
         return self.info['title']
 
     @property
-    def broadcast_id(self):
+    def broadcast_id(self) -> str:
         return self.info['broadcast_id']
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self.info['_id']
 
     @property
-    def created_at(self):
+    def created_at(self) -> str:
         return self.info['created_at']
 
     @property
-    def game(self):
+    def game(self) -> str:
         return self.info['game']
 
     @property
-    def broadcast_type(self):
+    def broadcast_type(self) -> str:
         return self.info['broadcast_type']
 
     @property
-    def channel(self):
+    def channel(self) -> str:
         return self.info['channel']['name']
 
     @property
-    def is_recording(self):
+    def is_recording(self) -> bool:
         return self.info['status'] != 'recorded'
 
-    def download(self):
-        def get_newest(list_: List, element=None) -> List:
+    def download(self) -> None:
+        def get_newest(list_: List[T], element: Optional[T] = None) -> List[T]:
             if not element:
                 return list_
-            for i_, _ in reversed(list(enumerate(list_))):
+            for i, _ in reversed(list(enumerate(list_))):
                 if _ == element:
-                    return list_[i_ + 1:]
+                    return list_[i + 1:]
             return []
 
-        def download_segment(segment_: str):
+        def download_segment(segment_: str) -> bytes:
             return request_get_retried(segment_).content
 
-        def chunks(l: list, n: int):
+        def chunks(l: List[T], n: int) -> Iterator[List[T]]:
             for j in range(0, len(l), n):
                 yield l[j:j + n]
 
-        playlist = _UpdatableM3U8(self._get_playlist_uri())
-        with NamedTemporaryFile(suffix='.ts', delete=False, dir=self.temp_dir) as temp_file:
-            self.file_path = temp_file.name
-            logging.info(f'Create temporary file {self.file_path}')
+        playlist = _m3u8_from_uri(self._get_playlist_uri())
+        with self.file:
+            logging.info(f'Create temporary file {self.file.name}')
             logging.info(f'Start downloading: {self.id}')
             info = type('Info', (object,), dict(id=self.id, channel=self.channel))
             self.view(ViewEvent.StartDownloading, info)
@@ -101,8 +102,8 @@ class TwitchVideo:
                 for chunk in chunks(segments, 10):
                     start_time = clock()
                     for segment in chunk:
-                        content = download_segment(playlist.base_path + '/' + segment)
-                        temp_file.write(content)
+                        content = download_segment(playlist.base_uri + segment)
+                        self.file.write(content)
                         last_downloaded = segment
                         completed_segments += 1
                         total_completed_segments += 1
@@ -125,27 +126,27 @@ class TwitchVideo:
                         self.view(ViewEvent.StopDownloading)
                         break
                 self._update_info()
-                playlist.update(self._get_playlist_uri() if is_slow else None)
+                playlist = _m3u8_from_uri(self._get_playlist_uri() if is_slow else playlist.base_path)
 
-    def _get_playlist_uri(self):
+    def _get_playlist_uri(self) -> str:
         return self.api.get_video_playlist_uri(self.id, self.quality)
 
     @staticmethod
-    def _validate_info(info: Dict):
-        from jsonschema import validate
+    def _validate_info(info: Dict) -> None:
+        from jsonschema import validate  # type: ignore
         validate(info, TwitchVideo._schema)
 
-    def _update_info(self):
+    def _update_info(self) -> None:
         self.info = self.api.get_video(self.id)
 
 
 class Storage:
-    def __init__(self, storage_path: str = '.', vod_path_template: str = '{id} {date:%Y-%m-%d}.ts'):
+    def __init__(self, storage_path: str = '.', vod_path_template: str = '{id} {date:%Y-%m-%d}.ts') -> None:
         self.path = os.path.abspath(storage_path)
         os.makedirs(storage_path, exist_ok=True)
         self.broadcast_path = vod_path_template
 
-    def add_broadcast(self, broadcast: TwitchVideo):
+    def add_broadcast(self, broadcast: TwitchVideo) -> None:
         def _sanitize(filename: str, replace_to: str = '') -> str:
             excepted_chars = list(r':;/\?|*<>.')
             for char in excepted_chars:
@@ -159,24 +160,25 @@ class Storage:
                                               game=_sanitize(broadcast.game, replace_to='_'),
                                               date=dateutil.parser.parse(broadcast.created_at))
         new_path = os.path.join(self.path, new_path)
-        logging.info(f'Moving file to storage: {broadcast.file_path} to {new_path}')
+        logging.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
         os.makedirs(os.path.dirname(new_path), exist_ok=True)
         while os.path.exists(new_path):
             name, ext = os.path.splitext(new_path)
             new_path = name + '*' + ext
-        shutil.move(broadcast.file_path, new_path)
+        shutil.move(broadcast.file.name, new_path)
 
 
-class _UpdatableM3U8(m3u8.M3U8):
-    def __init__(self, playlist_uri: str):
-        base_path: str = urljoin(playlist_uri, '.').rstrip('/')
-        r = self._get_playlist(playlist_uri)
-        super(_UpdatableM3U8, self).__init__(r.text, base_path=base_path)
-        self.playlist_uri = playlist_uri
+def _m3u8_from_uri(playlist_uri: str) -> M3U8:
+    base_uri = urljoin(playlist_uri, '.')
+    r = request_get_retried(playlist_uri)
+    return M3U8(r.text, base_path=playlist_uri, base_uri=base_uri)
 
-    def update(self, playlist_uri: str = None):
-        self.__init__(playlist_uri or self.playlist_uri)
-
-    @staticmethod
-    def _get_playlist(uri):
-        return request_get_retried(uri)
+# class _UpdatableM3U8(M3U8):
+#     def __init__(self, playlist_uri: str) -> None:
+#         base_path = urljoin(playlist_uri, '.')
+#         r = request_get_retried(playlist_uri)
+#         super().__init__(r.text, base_path=base_path)
+#         self.playlist_uri = playlist_uri
+#
+#     def update(self, playlist_uri: Optional[str] = None) -> '_UpdatableM3U8':
+#         return self.__class__(playlist_uri or self.playlist_uri)

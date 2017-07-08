@@ -1,9 +1,10 @@
 # encoding=utf-8
 import logging.config
 from time import sleep
+from typing import Dict
 
 import requests
-from tenacity import retry, wait_fixed, stop_after_attempt
+from tenacity import retry, wait_fixed, stop_after_attempt  # type: ignore
 from tenacity import retry_if_exception_type as retry_on
 
 import config
@@ -31,12 +32,12 @@ else:
 
 
 @retry(retry=retry_on(NoValidVideo), wait=wait_fixed(10), stop=stop_after_attempt(30))
-def get_recording_video_info(channel_: str):
+def get_recording_video_info(channel_: str) -> Dict:
     return _twitchAPI.get_recording_video(channel_)
 
 
 @retry(retry=retry_on(requests.ConnectionError), wait=wait_fixed(300))
-def process():
+def process() -> None:
     while True:
         _view(ViewEvent.CheckStatus, channel)
         if _twitchAPI.get_stream_status(channel) == 'online':

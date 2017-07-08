@@ -1,18 +1,19 @@
 # encoding=utf-8
 from pathlib import Path
+from typing import Dict
 
 import yaml
 
 
-def init(path='config.yaml'):
+def init(path: str = 'config.yaml') -> Dict:
     if not Path(path).exists():
         create(path)
         print(f'Please check configuration file {path}')
         quit(0)
-    return read(path)
+    return load(path)
 
 
-def create(path):
+def create(path: str) -> None:
     with open(path, 'w') as f:
         f.write('''twitch:
     client_id: <your client-id>
@@ -28,7 +29,7 @@ storage:
     # Python 3.6 f-string. Valid arguments: {title} {id} {type} {channel} {game} {date}
     # '*' will be added to the new filename if file already exist in storage
     vod_path: <"{channel}/{id} {date:%Y-%m-%d} {title}.ts">
-    
+
 telegram:
     enabled: False
     api_token: <Telegram bot API token>
@@ -59,14 +60,14 @@ logging:
         handlers: [console, log_file_handler]''')
 
 
-def read(path):
+def load(path: str) -> Dict:
     with open(path, 'rt') as f:
-        config = yaml.safe_load(f.read())
+        config = yaml.safe_load(f.read())  # type: ignore
         validate(config)
         return config
 
 
-def validate(config: dict):
+def validate(config: dict) -> None:
     groups = {'twitch', 'main', 'storage', 'logging'}
     twitch_keys = {'client_id'}
     main_keys = {'channel', 'quality', 'temp_dir'}
