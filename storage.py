@@ -172,13 +172,3 @@ def _m3u8_from_uri(playlist_uri: str) -> M3U8:
     base_uri = urljoin(playlist_uri, '.')
     r = request_get_retried(playlist_uri)
     return M3U8(r.text, base_path=playlist_uri, base_uri=base_uri)
-
-# class _UpdatableM3U8(M3U8):
-#     def __init__(self, playlist_uri: str) -> None:
-#         base_path = urljoin(playlist_uri, '.')
-#         r = request_get_retried(playlist_uri)
-#         super().__init__(r.text, base_path=base_path)
-#         self.playlist_uri = playlist_uri
-#
-#     def update(self, playlist_uri: Optional[str] = None) -> '_UpdatableM3U8':
-#         return self.__class__(playlist_uri or self.playlist_uri)

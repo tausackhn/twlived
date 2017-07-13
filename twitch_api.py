@@ -93,7 +93,8 @@ class TwitchAPI:
 
     def get_stream_status(self, channel: str) -> str:
         streams = self.get_streams([channel])
-        return 'online' if streams['_total'] > 0 else 'offline'
+        live_stream = streams['_total'] > 0 and streams['streams'][0]['stream_type'] == 'live'
+        return 'online' if live_stream else 'offline'
 
     def get_streams(self,
                     channel: Optional[List[str]] = None,
