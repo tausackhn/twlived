@@ -160,11 +160,11 @@ class Storage:
                                               game=_sanitize(broadcast.game, replace_to='_'),
                                               date=dateutil.parser.parse(broadcast.created_at))
         new_path = os.path.join(self.path, new_path)
-        logging.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
         os.makedirs(os.path.dirname(new_path), exist_ok=True)
         while os.path.exists(new_path):
             name, ext = os.path.splitext(new_path)
-            new_path = name + '*' + ext
+            new_path = name + '+' + ext
+        logging.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
         shutil.move(broadcast.file.name, new_path)
 
 
