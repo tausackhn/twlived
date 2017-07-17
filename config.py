@@ -4,18 +4,8 @@ from typing import Dict
 
 import yaml
 
-
-def init(path: str = 'config.yaml') -> Dict:
-    if not Path(path).exists():
-        create(path)
-        print(f'Please check configuration file {path}')
-        quit(0)
-    return load(path)
-
-
-def create(path: str) -> None:
-    with open(path, 'w') as f:
-        f.write('''twitch:
+basic_config_str = '''\
+twitch:
     client_id: <your client-id>
 
 main:
@@ -34,30 +24,20 @@ telegram:
     enabled: False
     api_token: <Telegram bot API token>
     chat_id: <your chat id>
+'''
 
-logging:
-    version: 1
-    disable_existing_loggers: False
-    formatters:
-        brief:
-            format: "%(message)s"
-        extend:
-            format: "%(asctime)s - %(levelname)s - %(module)s - %(message)s"
-    handlers:
-        console:
-            class: logging.StreamHandler
-            level: INFO
-            formatter: brief
-            stream: ext://sys.stdout
-        log_file_handler:
-            class: logging.FileHandler
-            level: INFO
-            formatter: extend
-            filename: twlived.log
-            encoding: utf8
-    root:
-        level: DEBUG
-        handlers: [console, log_file_handler]''')
+
+def init(path: str = 'config.yaml') -> Dict:
+    if not Path(path).exists():
+        create(path)
+        print(f'Please check configuration file {path}')
+        quit(0)
+    return load(path)
+
+
+def create(path: str) -> None:
+    with open(path, 'w') as f:
+        f.write(basic_config_str)
 
 
 def load(path: str) -> Dict:
@@ -68,7 +48,7 @@ def load(path: str) -> Dict:
 
 
 def validate(config: dict) -> None:
-    groups = {'twitch', 'main', 'storage', 'logging'}
+    groups = {'twitch', 'main', 'storage'}
     twitch_keys = {'client_id'}
     main_keys = {'channel', 'quality', 'temp_dir'}
     storage_keys = {'path', 'vod_path'}

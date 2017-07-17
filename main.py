@@ -1,31 +1,33 @@
 # encoding=utf-8
-import logging.config
 from time import sleep
 from typing import Dict
 
-import requests
+from requests import ConnectionError
 from tenacity import retry, wait_fixed, stop_after_attempt  # type: ignore
 from tenacity import retry_if_exception_type as retry_on
 
 import config
+from config_logging import setup_logging, log
 from network import request_get_retried
 from storage import TwitchVideo, Storage
 from telegram_bot import TelegramBot
 from twitch_api import TwitchAPI, NoValidVideo
 from view import View, ViewEvent
 
-_config = config.init()
-logging.config.dictConfig(_config['logging'])
+setup_logging()
 
+log = log.getChild(__name__)
+
+_config = config.init()
 channel = _config['main']['channel'].lower()
 quality = TwitchAPI.VideoQuality.get(_config['main']['quality'])
-
 _twitchAPI = TwitchAPI(client_id=_config['twitch']['client_id'],
                        fetch=request_get_retried)
 _storage = Storage(storage_path=_config['storage']['path'],
                    vod_path_template=_config['storage']['vod_path'])
 if _config['telegram']['enabled']:
-    _bot = TelegramBot(token=_config['telegram']['api_token'], chat_id=_config['telegram']['chat_id'])
+    _bot = TelegramBot(token=_config['telegram']['api_token'],
+                       chat_id=_config['telegram']['chat_id'])
     _view = View(telegram_bot=_bot)
 else:
     _view = View()
@@ -36,7 +38,7 @@ def get_recording_video_info(channel_: str) -> Dict:
     return _twitchAPI.get_recording_video(channel_)
 
 
-@retry(retry=retry_on(requests.ConnectionError), wait=wait_fixed(300))
+@retry(retry=retry_on(ConnectionError), wait=wait_fixed(300))
 def process() -> None:
     while True:
         _view(ViewEvent.CheckStatus, channel)
@@ -54,4 +56,9 @@ def process() -> None:
 
 
 if __name__ == '__main__':
-    process()
+    try:
+        process()
+    except KeyboardInterrupt:
+        pass
+    except:
+        log.exception("Fatal error.")

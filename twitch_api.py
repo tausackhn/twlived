@@ -9,6 +9,8 @@ from urllib.parse import urljoin
 import requests
 from m3u8 import M3U8  # type: ignore
 
+log = logging.getLogger(__name__)
+
 T = TypeVar('T')
 
 
@@ -85,7 +87,7 @@ class TwitchAPI:
         self._get_user_id(channels)
 
     def get_stream(self, channel: str) -> Dict:
-        logging.debug(f'Retrieving stream status: {channel}')
+        log.debug(f'Retrieving stream status: {channel}')
         channel_id = self._get_user_id(channel)
         r = self._request_get(f'streams/{channel_id}')
         r.raise_for_status()
@@ -103,9 +105,9 @@ class TwitchAPI:
                     stream_type: Optional[str] = None,
                     limit: int = 25, offset: int = 0) -> Dict:
         if isinstance(channel, list):
-            logging.debug(f'Retrieving streams info: {len(channel)} {channel}')
+            log.debug(f'Retrieving streams info: {len(channel)} {channel}')
         else:
-            logging.debug(f'Retrieving streams info: {game}, {language}, {stream_type}, {limit}, {offset}')
+            log.debug(f'Retrieving streams info: {game}, {language}, {stream_type}, {limit}, {offset}')
         if limit > 100:
             raise TwitchAPIError('Too much streams requested. Must be <= 100')
         channel_ids = self._get_user_id(channel) if channel else None
@@ -122,7 +124,7 @@ class TwitchAPI:
         return r.json()
 
     def get_video_playlist_uri(self, _id: str, quality: str = VideoQuality.SOURCE) -> str:
-        logging.debug(f'Retrieving playlist: {_id} {quality}')
+        log.debug(f'Retrieving playlist: {_id} {quality}')
         vod_id = _id.lstrip('v')
         token = self._get_token(vod_id)
         variant_playlist: M3U8 = self._get_variant_playlist(vod_id=vod_id, token=token)
@@ -131,11 +133,11 @@ class TwitchAPI:
                         playlist.media[0].name == quality)
         except StopIteration as _:
             msg = f"Got '{quality}' while expected one of {[_.media[0].name for _ in variant_playlist.playlists]}"
-            logging.exception(msg)
+            log.exception(msg)
             raise InvalidStreamQuality(msg) from _
 
     def get_videos(self, channel: str, broadcast_type: str = 'archive', require_all: bool = False) -> List[Dict]:
-        logging.debug(f'Retrieving videos: {channel} {broadcast_type} require_all={require_all}')
+        log.debug(f'Retrieving videos: {channel} {broadcast_type} require_all={require_all}')
         channel_id = self._get_user_id(channel)
         offset = 0
         limit = TwitchAPI.MAX_VIDEOS if require_all else TwitchAPI.DEFAULT_NUM_VIDEOS
@@ -154,12 +156,12 @@ class TwitchAPI:
         return videos
 
     def get_video(self, id_: str) -> Dict:
-        logging.debug(f'Retrieving video: {id_}')
+        log.debug(f'Retrieving video: {id_}')
         r = self._request_get(f'videos/{id_}')
         return r.json()
 
     def get_channel_info(self, channel: str) -> Dict:
-        logging.debug(f'Retrieving channel info: {channel}')
+        log.debug(f'Retrieving channel info: {channel}')
         channel_id = self._get_user_id(channel)
         if channel_id:
             r = self._request_get(f'channels/{channel_id}')
@@ -168,7 +170,7 @@ class TwitchAPI:
             raise NonexistentChannel(channel)
 
     def get_recording_video(self, channel: str) -> Dict:
-        logging.debug(f'Retrieving recording video: {channel}')
+        log.debug(f'Retrieving recording video: {channel}')
         last_broadcasts = self.get_videos(channel)
         try:
             return next(broadcast for broadcast in last_broadcasts if broadcast['status'] == 'recording')
@@ -177,14 +179,14 @@ class TwitchAPI:
 
     @token_storage
     def _get_token(self, vod_id: str) -> Dict:
-        logging.debug(f'Retrieving token: {vod_id}')
+        log.debug(f'Retrieving token: {vod_id}')
         r = self._request_get(f'vods/{vod_id}/access_token',
                               domain=f'{TwitchAPI.API_DOMAIN}{TwitchAPI.API}/',
                               params={'need_https': 'true'})
         return r.json()
 
     def _get_variant_playlist(self, vod_id: str, token: Dict) -> M3U8:
-        logging.debug(f'Retrieving variant playlist: {vod_id} {token}')
+        log.debug(f'Retrieving variant playlist: {vod_id} {token}')
         r = self._request_get(f'vod/{vod_id}', domain=TwitchAPI.USHER_DOMAIN,
                               params={'nauthsig': token['sig'],
                                       'nauth': token['token'],
@@ -212,14 +214,14 @@ class TwitchAPI:
 
         @__call__.register(list)
         def _list(self, usernames: List[str]) -> List[Optional[str]]:
-            logging.debug(f'Retrieving user-id from IDStorage: {len(usernames)} {usernames}')
+            log.debug(f'Retrieving user-id from IDStorage: {len(usernames)} {usernames}')
             missing_names = [_ for _ in usernames if _ not in self.cache]
             if missing_names:
                 self._update(missing_names)
             return [self.cache[username] for username in usernames]
 
         def _update(self, items: List[str]) -> None:
-            logging.debug(f'Updating user-id: {len(items)} {items}')
+            log.debug(f'Updating user-id: {len(items)} {items}')
             max_id = TwitchAPI.MAX_IDS
             items_chunks = [items[i:i + max_id] for i in range(0, len(items), max_id)]
             for chunk in items_chunks:
@@ -227,7 +229,7 @@ class TwitchAPI:
                 self.cache.update(ids)
 
     def _get_user_id_(self, usernames: List[str]) -> List[Tuple[str, Optional[str]]]:
-        logging.debug(f'Retrieving user-id: {len(usernames)} {usernames}')
+        log.debug(f'Retrieving user-id: {len(usernames)} {usernames}')
         if len(usernames) > TwitchAPI.MAX_IDS:
             raise TwitchAPIError('Too much usernames. Must be <= 100')
         r = self._request_get('users', params={'login': ','.join(usernames)})

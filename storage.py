@@ -1,6 +1,5 @@
 # encoding=utf-8
 import json
-import logging
 import os
 import shutil
 from tempfile import NamedTemporaryFile
@@ -11,10 +10,14 @@ from urllib.parse import urljoin
 
 import dateutil.parser
 from m3u8 import M3U8  # type: ignore
+from requests import HTTPError
 
+from config_logging import log
 from network import request_get_retried
 from twitch_api import TwitchAPI
 from view import ViewEvent, View
+
+log = log.getChild(__name__)
 
 T = TypeVar('T')
 
@@ -87,8 +90,8 @@ class TwitchVideo:
 
         playlist = _m3u8_from_uri(self._get_playlist_uri())
         with self.file:
-            logging.info(f'Create temporary file {self.file.name}')
-            logging.info(f'Start downloading: {self.id}')
+            log.info(f'Create temporary file {self.file.name}')
+            log.info(f'Start downloading: {self.id}')
             info = type('Info', (object,), dict(id=self.id, channel=self.channel))
             self.view(ViewEvent.StartDownloading, info)
             last_downloaded = None
@@ -99,24 +102,27 @@ class TwitchVideo:
                 completed_segments = 0
                 is_slow = False
                 chunks_downloaded = False
-                for chunk in chunks(segments, 10):
-                    start_time = clock()
-                    for segment in chunk:
-                        content = download_segment(playlist.base_uri + segment)
-                        self.file.write(content)
-                        last_downloaded = segment
-                        completed_segments += 1
-                        total_completed_segments += 1
-                        info = type('Info', (object,), dict(completed_segments=completed_segments,
-                                                            segments=len(segments),
-                                                            total_completed_segments=total_completed_segments,
-                                                            total_segments=total_segments))
-                        self.view(ViewEvent.ProgressInfo, info)
-                    if clock() - start_time > 50:
-                        is_slow = True
-                        break
-                else:
-                    chunks_downloaded = True
+                try:
+                    for chunk in chunks(segments, 10):
+                        start_time = clock()
+                        for segment in chunk:
+                            content = download_segment(playlist.base_uri + segment)
+                            self.file.write(content)
+                            last_downloaded = segment
+                            completed_segments += 1
+                            total_completed_segments += 1
+                            info = type('Info', (object,), dict(completed_segments=completed_segments,
+                                                                segments=len(segments),
+                                                                total_completed_segments=total_completed_segments,
+                                                                total_segments=total_segments))
+                            self.view(ViewEvent.ProgressInfo, info)
+                        if clock() - start_time > 50:
+                            is_slow = True
+                            break
+                    else:
+                        chunks_downloaded = True
+                except HTTPError:
+                    is_slow = True
                 # TODO: write a better detecting method for finished VODs.
                 # TwitchAPI bug occurs sometime. Finished VOD can have 'status' == 'recording'.
                 if chunks_downloaded:
@@ -164,7 +170,7 @@ class Storage:
         while os.path.exists(new_path):
             name, ext = os.path.splitext(new_path)
             new_path = name + '+' + ext
-        logging.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
+        log.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
         shutil.move(broadcast.file.name, new_path)
 
 
