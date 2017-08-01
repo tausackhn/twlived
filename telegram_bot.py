@@ -7,6 +7,6 @@ class TelegramBot:
         self.chat_id = chat_id
 
     def send_message(self, message: str) -> None:
-        r = requests.post(f'https://api.telegram.org/bot{self.token}/sendMessage',
-                          params={'chat_id': self.chat_id, 'text': message})
-        r.raise_for_status()
+        request = requests.post(f'https://api.telegram.org/bot{self.token}/sendMessage',
+                                params={'chat_id': self.chat_id, 'text': message})
+        request.raise_for_status()

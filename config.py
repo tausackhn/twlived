@@ -1,10 +1,9 @@
-# encoding=utf-8
 from pathlib import Path
 from typing import Dict
 
-import yaml
+from ruamel.yaml import safe_load as yaml_load
 
-basic_config_str = '''\
+BASIC_CONFIG = '''\
 twitch:
     client_id: <your client-id>
 
@@ -36,15 +35,15 @@ def init(path: str = 'config.yaml') -> Dict:
 
 
 def create(path: str) -> None:
-    with open(path, 'w') as f:
-        f.write(basic_config_str)
+    with open(path, 'w') as file:
+        file.write(BASIC_CONFIG)
 
 
 def load(path: str) -> Dict:
-    with open(path, 'rt') as f:
-        config = yaml.safe_load(f.read())  # type: ignore
-        validate(config)
-        return config
+    with open(path, 'rt') as file:
+        config = yaml_load(file.read())
+    validate(config)
+    return config
 
 
 def validate(config: dict) -> None:

@@ -1,4 +1,3 @@
-# encoding=utf-8
 import json
 import os
 import shutil
@@ -8,16 +7,17 @@ from time import sleep
 from typing import Dict, List, Any, Optional, TypeVar, Iterator
 from urllib.parse import urljoin
 
+# noinspection PyPackageRequirements
 import dateutil.parser
 from m3u8 import M3U8  # type: ignore
 from requests import HTTPError
 
-from config_logging import log
+from config_logging import LOG
 from network import request_get_retried
 from twitch_api import TwitchAPI
 from view import ViewEvent, View
 
-log = log.getChild(__name__)
+logger = LOG.getChild(__name__)  # pylint: disable=invalid-name
 
 T = TypeVar('T')
 
@@ -73,25 +73,25 @@ class TwitchVideo:
         return self.info['status'] != 'recorded'
 
     def download(self) -> None:
-        def get_newest(list_: List[T], element: Optional[T] = None) -> List[T]:
+        def get_newest(_list: List[T], element: Optional[T] = None) -> List[T]:
             if not element:
-                return list_
-            for i, _ in reversed(list(enumerate(list_))):
+                return _list
+            for i, _ in reversed(list(enumerate(_list))):
                 if _ == element:
-                    return list_[i + 1:]
+                    return _list[i + 1:]
             return []
 
         def download_segment(segment_: str) -> bytes:
             return request_get_retried(segment_).content
 
-        def chunks(l: List[T], n: int) -> Iterator[List[T]]:
-            for j in range(0, len(l), n):
-                yield l[j:j + n]
+        def chunks(_list: List[T], size: int) -> Iterator[List[T]]:
+            for j in range(0, len(_list), size):
+                yield _list[j:j + size]
 
         playlist = _m3u8_from_uri(self._get_playlist_uri())
         with self.file:
-            log.info(f'Create temporary file {self.file.name}')
-            log.info(f'Start downloading: {self.id}')
+            logger.info(f'Create temporary file {self.file.name}')
+            logger.info(f'Start downloading: {self.id}')
             info = type('Info', (object,), dict(id=self.id, channel=self.channel))
             self.view(ViewEvent.StartDownloading, info)
             last_downloaded = None
@@ -135,7 +135,7 @@ class TwitchVideo:
                 playlist = _m3u8_from_uri(self._get_playlist_uri() if is_slow else playlist.base_path)
 
     def _get_playlist_uri(self) -> str:
-        return self.api.get_video_playlist_uri(self.id, self.quality)
+        return self.api.get_video_playlist_uri(self.id, quality=self.quality)
 
     @staticmethod
     def _validate_info(info: Dict) -> None:
@@ -170,11 +170,11 @@ class Storage:
         while os.path.exists(new_path):
             name, ext = os.path.splitext(new_path)
             new_path = name + '+' + ext
-        log.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
+        logger.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
         shutil.move(broadcast.file.name, new_path)
 
 
 def _m3u8_from_uri(playlist_uri: str) -> M3U8:
     base_uri = urljoin(playlist_uri, '.')
-    r = request_get_retried(playlist_uri)
-    return M3U8(r.text, base_path=playlist_uri, base_uri=base_uri)
+    request = request_get_retried(playlist_uri)
+    return M3U8(request.text, base_path=playlist_uri, base_uri=base_uri)

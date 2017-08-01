@@ -1,6 +1,6 @@
-jsonschema
-requests
-m3u8
-dateutils
-pyyaml
-tenacity
+dateutils==0.6.6
+jsonschema==2.6.0
+m3u8==0.3.2
+requests==2.18.1
+ruamel.yaml==0.15.22
+tenacity==4.2.0

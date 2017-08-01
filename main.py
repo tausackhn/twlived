@@ -1,13 +1,12 @@
-# encoding=utf-8
 from time import sleep
 from typing import Dict
 
-from requests import ConnectionError
+from requests import ConnectionError  # pylint: disable=redefined-builtin
 from tenacity import retry, wait_fixed, stop_after_attempt  # type: ignore
 from tenacity import retry_if_exception_type as retry_on
 
 import config
-from config_logging import setup_logging, log
+from config_logging import setup_logging, LOG
 from network import request_get_retried
 from storage import TwitchVideo, Storage
 from telegram_bot import TelegramBot
@@ -15,8 +14,7 @@ from twitch_api import TwitchAPI, NoValidVideo
 from view import View, ViewEvent
 
 setup_logging()
-
-log = log.getChild(__name__)
+logger = LOG.getChild(__name__)  # pylint: disable=invalid-name
 
 _config = config.init()
 channel = _config['main']['channel'].lower()
@@ -56,9 +54,10 @@ def process() -> None:
 
 
 if __name__ == '__main__':
+    # noinspection PyBroadException
     try:
         process()
     except KeyboardInterrupt:
         pass
-    except:
-        log.exception("Fatal error.")
+    except:  # pylint: disable=bare-except
+        logger.exception("Fatal error.")

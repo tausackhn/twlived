@@ -4,6 +4,7 @@ from typing import Optional, Any
 from telegram_bot import TelegramBot
 
 
+# pylint: disable=too-few-public-methods
 class ViewEvent(Enum):
     CheckStatus = auto()
     WaitLiveVideo = auto()
