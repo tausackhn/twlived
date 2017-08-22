@@ -172,6 +172,7 @@ class Storage:
             new_path = name + '+' + ext
         logger.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
         shutil.move(broadcast.file.name, new_path)
+        os.chmod(new_path, 0o755)
 
 
 def _m3u8_from_uri(playlist_uri: str) -> M3U8:
