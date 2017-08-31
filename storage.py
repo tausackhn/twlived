@@ -11,6 +11,8 @@ from urllib.parse import urljoin
 import dateutil.parser
 from m3u8 import M3U8  # type: ignore
 from requests import HTTPError
+from tenacity import retry, wait_fixed, stop_after_attempt
+from tenacity import retry_if_exception_type as retry_on
 
 from config_logging import LOG
 from network import request_get_retried
@@ -142,6 +144,7 @@ class TwitchVideo:
         from jsonschema import validate  # type: ignore
         validate(info, TwitchVideo._schema)
 
+    @retry(retry=retry_on(HTTPError), wait=wait_fixed(300), stop=stop_after_attempt(5))
     def _update_info(self) -> None:
         self.info = self.api.get_video(self.id)
 

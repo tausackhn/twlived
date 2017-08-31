@@ -53,19 +53,21 @@ class TwitchAPI:
     # pylint: disable=too-few-public-methods
     class VideoQuality:
         SOURCE = 'Source'
-        HIGH = 'High'
-        MEDIUM = 'Medium'
-        LOW = 'Low'
-        MOBILE = 'Mobile'
+        Q720P60 = '720p60'
+        Q720P30 = '720p30'
+        Q480P30 = '480p30'
+        Q360P30 = '360p30'
+        Q160P30 = '160p30'
         AUDIO_ONLY = 'Audio Only'
 
         @staticmethod
         def get(quality: str) -> str:
             qualities = {'source': TwitchAPI.VideoQuality.SOURCE,
-                         'high': TwitchAPI.VideoQuality.HIGH,
-                         'medium': TwitchAPI.VideoQuality.MEDIUM,
-                         'low': TwitchAPI.VideoQuality.LOW,
-                         'mobile': TwitchAPI.VideoQuality.MOBILE,
+                         '720p60': TwitchAPI.VideoQuality.Q720P60,
+                         '720p30': TwitchAPI.VideoQuality.Q720P30,
+                         '480p30': TwitchAPI.VideoQuality.Q480P30,
+                         '360p30': TwitchAPI.VideoQuality.Q360P30,
+                         '160p30': TwitchAPI.VideoQuality.Q160P30,
                          'audio only': TwitchAPI.VideoQuality.AUDIO_ONLY}
             return qualities[quality]
 
