@@ -95,7 +95,7 @@ class TwitchVideo:
             logger.info(f'Create temporary file {self.file.name}')
             logger.info(f'Start downloading: {self.id}')
             info = type('Info', (object,), dict(id=self.id, channel=self.channel))
-            self.view(ViewEvent.StartDownloading, info)
+            self.view(ViewEvent.StartDownloading, info=info)
             last_downloaded = None
             total_completed_segments = 0
             while True:
@@ -117,7 +117,7 @@ class TwitchVideo:
                                                                 segments=len(segments),
                                                                 total_completed_segments=total_completed_segments,
                                                                 total_segments=total_segments))
-                            self.view(ViewEvent.ProgressInfo, info)
+                            self.view(ViewEvent.ProgressInfo, info=info)
                         if clock() - start_time > 50:
                             is_slow = True
                             break
@@ -144,7 +144,7 @@ class TwitchVideo:
         from jsonschema import validate  # type: ignore
         validate(info, TwitchVideo._schema)
 
-    @retry(retry=retry_on(HTTPError), wait=wait_fixed(300), stop=stop_after_attempt(5))
+    @retry(retry=retry_on(HTTPError), wait=wait_fixed(60), stop=stop_after_attempt(30))
     def _update_info(self) -> None:
         self.info = self.api.get_video(self.id)
 

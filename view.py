@@ -19,7 +19,7 @@ class View:
     def __init__(self, telegram_bot: Optional[TelegramBot] = None) -> None:
         self._bot = telegram_bot
 
-    def __call__(self, event: ViewEvent, info: Any = None) -> None:
+    def __call__(self, event: ViewEvent, *, info: Any = None) -> None:
         if event is ViewEvent.CheckStatus:
             print(f'Looking for stream on {info}')
         elif event is ViewEvent.WaitLiveVideo:
@@ -37,4 +37,4 @@ class View:
         elif event is ViewEvent.MovingFile:
             pass
         elif event is ViewEvent.WaitStream:
-            print('No live stream. Waiting 15 min')
+            print(f'No live stream. Waiting {info/60:.1f} min')

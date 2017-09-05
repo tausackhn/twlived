@@ -1,5 +1,5 @@
 from time import sleep
-from typing import Dict
+from typing import Dict, Generator
 
 from requests import ConnectionError  # pylint: disable=redefined-builtin
 from tenacity import retry, wait_fixed, stop_after_attempt  # type: ignore
@@ -31,6 +31,22 @@ else:
     _view = View()
 
 
+def delay_generator(maximum: int, step: int) -> Generator[int, int, None]:
+    i = step
+    while True:
+        while i <= maximum:
+            value = (yield i)
+            if value is not None:
+                i = value
+            else:
+                i += step
+        while True:
+            value = (yield maximum)
+            if value is not None:
+                i = value
+                break
+
+
 @retry(retry=retry_on(NoValidVideo), wait=wait_fixed(10), stop=stop_after_attempt(30))
 def get_recording_video_info(channel_: str) -> Dict:
     return _twitchAPI.get_recording_video(channel_)
@@ -38,8 +54,9 @@ def get_recording_video_info(channel_: str) -> Dict:
 
 @retry(retry=retry_on(ConnectionError), wait=wait_fixed(300))
 def process() -> None:
+    delay = delay_generator(900, 60)
     while True:
-        _view(ViewEvent.CheckStatus, channel)
+        _view(ViewEvent.CheckStatus, info=channel)
         if _twitchAPI.get_stream_status(channel) == 'online':
             _view(ViewEvent.WaitLiveVideo)
             stream_video = TwitchVideo(view=_view,
@@ -49,8 +66,10 @@ def process() -> None:
                                        temp_dir=_config['main']['temp_dir'])
             stream_video.download()
             _storage.add_broadcast(stream_video)
-        _view(ViewEvent.WaitStream)
-        sleep(900)
+            delay.send(0)
+        waiting_time = next(delay)
+        _view(ViewEvent.WaitStream, info=waiting_time)
+        sleep(waiting_time)
 
 
 if __name__ == '__main__':
