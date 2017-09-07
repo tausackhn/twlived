@@ -1,5 +1,5 @@
 from time import sleep
-from typing import Dict, Generator
+from typing import Dict, Generator, List
 
 from requests import ConnectionError  # pylint: disable=redefined-builtin
 from tenacity import retry, wait_fixed, stop_after_attempt  # type: ignore
@@ -48,8 +48,8 @@ def delay_generator(maximum: int, step: int) -> Generator[int, int, None]:
 
 
 @retry(retry=retry_on(NoValidVideo), wait=wait_fixed(10), stop=stop_after_attempt(30))
-def get_recording_video_info(channel_: str) -> Dict:
-    return _twitchAPI.get_recording_video(channel_)
+def get_recording_videos_info(channel_: str) -> List[Dict]:
+    return _twitchAPI.get_recording_videos(channel_)
 
 
 @retry(retry=retry_on(ConnectionError), wait=wait_fixed(300))
@@ -59,14 +59,16 @@ def process() -> None:
         _view(ViewEvent.CheckStatus, info=channel)
         if _twitchAPI.get_stream_status(channel) == 'online':
             _view(ViewEvent.WaitLiveVideo)
-            stream_video = TwitchVideo(view=_view,
-                                       info=get_recording_video_info(channel),
-                                       api=_twitchAPI,
-                                       quality=quality,
-                                       temp_dir=_config['main']['temp_dir'])
-            stream_video.download()
-            _storage.add_broadcast(stream_video)
-            delay.send(0)
+            for video_info in get_recording_videos_info(channel):
+                stream_video = TwitchVideo(view=_view,
+                                           info=video_info,
+                                           api=_twitchAPI,
+                                           quality=quality,
+                                           temp_dir=_config['main']['temp_dir'])
+                if stream_video.id != _storage.last_added_id:
+                    stream_video.download()
+                    _storage.add_broadcast(stream_video)
+                    delay.send(0)
         waiting_time = next(delay)
         _view(ViewEvent.WaitStream, info=waiting_time)
         sleep(waiting_time)

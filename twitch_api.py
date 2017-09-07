@@ -172,13 +172,13 @@ class TwitchAPI:
         else:
             raise NonexistentChannel(channel)
 
-    def get_recording_video(self, channel: str) -> Dict:
+    def get_recording_videos(self, channel: str) -> List[Dict]:
         logger.debug(f'Retrieving recording video: {channel}')
         last_broadcasts = self.get_videos(channel)
-        try:
-            return next(broadcast for broadcast in last_broadcasts if broadcast['status'] == 'recording')
-        except StopIteration as _:
-            raise NoValidVideo(f'No recording video at {channel}') from _
+        recording_videos = [broadcast for broadcast in last_broadcasts if broadcast['status'] == 'recording']
+        if not recording_videos:
+            raise NoValidVideo(f'No recording video at {channel}')
+        return recording_videos
 
     @token_storage
     def _get_token(self, vod_id: str) -> Dict:

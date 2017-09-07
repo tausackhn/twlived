@@ -154,6 +154,7 @@ class Storage:
         self.path = os.path.abspath(storage_path)
         os.makedirs(storage_path, exist_ok=True)
         self.broadcast_path = vod_path_template
+        self.last_added_id: Optional[str] = None
 
     def add_broadcast(self, broadcast: TwitchVideo) -> None:
         def _sanitize(filename: str, replace_to: str = '') -> str:
@@ -176,6 +177,7 @@ class Storage:
         logger.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
         shutil.move(broadcast.file.name, new_path)
         os.chmod(new_path, 0o755)
+        self.last_added_id = broadcast.id
 
 
 def _m3u8_from_uri(playlist_uri: str) -> M3U8:
