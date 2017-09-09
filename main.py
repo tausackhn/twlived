@@ -47,7 +47,7 @@ def delay_generator(maximum: int, step: int) -> Generator[int, int, None]:
                 break
 
 
-@retry(retry=retry_on(NoValidVideo), wait=wait_fixed(10), stop=stop_after_attempt(30))
+@retry(retry=retry_on(NoValidVideo), wait=wait_fixed(10), stop=stop_after_attempt(30), reraise=True)
 def get_recording_videos_info(channel_: str) -> List[Dict]:
     return _twitchAPI.get_recording_videos(channel_)
 
@@ -59,16 +59,20 @@ def process() -> None:
         _view(ViewEvent.CheckStatus, info=channel)
         if _twitchAPI.get_stream_status(channel) == 'online':
             _view(ViewEvent.WaitLiveVideo)
-            for video_info in get_recording_videos_info(channel):
-                stream_video = TwitchVideo(view=_view,
-                                           info=video_info,
-                                           api=_twitchAPI,
-                                           quality=quality,
-                                           temp_dir=_config['main']['temp_dir'])
-                if stream_video.id != _storage.last_added_id:
-                    stream_video.download()
-                    _storage.add_broadcast(stream_video)
-                    delay.send(0)
+            try:
+                for video_info in get_recording_videos_info(channel):
+                    stream_video = TwitchVideo(view=_view,
+                                               info=video_info,
+                                               api=_twitchAPI,
+                                               quality=quality,
+                                               temp_dir=_config['main']['temp_dir'])
+                    if stream_video.id != _storage.last_added_id:
+                        stream_video.download()
+                        _storage.add_broadcast(stream_video)
+                        delay.send(0)
+            # VOD obtain status `recording` before stream API changed status to `offline`
+            except NoValidVideo:
+                pass
         waiting_time = next(delay)
         _view(ViewEvent.WaitStream, info=waiting_time)
         sleep(waiting_time)
