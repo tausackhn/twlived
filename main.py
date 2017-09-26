@@ -18,7 +18,7 @@ logger = LOG.getChild(__name__)  # pylint: disable=invalid-name
 
 _config = config.init()
 channel = _config['main']['channel'].lower()
-quality = TwitchAPI.VideoQuality.get(_config['main']['quality'])
+quality = _config['main']['quality'] or 'chunked'
 _twitchAPI = TwitchAPI(client_id=_config['twitch']['client_id'],
                        fetch=request_get_retried)
 _storage = Storage(storage_path=_config['storage']['path'],
@@ -69,6 +69,7 @@ def process() -> None:
                     if stream_video.id != _storage.last_added_id:
                         stream_video.download()
                         _storage.add_broadcast(stream_video)
+                        # TODO: Catch just-started generator
                         delay.send(0)
             # VOD obtain status `recording` before stream API changed status to `offline`
             except NoValidVideo:
@@ -79,7 +80,7 @@ def process() -> None:
 
 
 if __name__ == '__main__':
-    # noinspection PyBroadException
+    # noinspection PyPep8,PyBroadException
     try:
         process()
     except KeyboardInterrupt:

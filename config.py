@@ -9,7 +9,7 @@ twitch:
 
 main:
     channel: <twitch channel>
-    # Could be one of (source, high, medium, low, mobile, audio only)
+    # Depends on stream. Leave blank for source (chunked) quality.
     quality: <quality>
     temp_dir: <path to temporary directory>
 

@@ -50,27 +50,6 @@ def token_storage(func: Callable[[Any, str], Dict]) -> Callable[[Any, str], Dict
 class TwitchAPI:
     """Class implementing part of Twitch API v5."""
 
-    # pylint: disable=too-few-public-methods
-    class VideoQuality:
-        SOURCE = 'Source'
-        Q720P60 = '720p60'
-        Q720P30 = '720p30'
-        Q480P30 = '480p30'
-        Q360P30 = '360p30'
-        Q160P30 = '160p30'
-        AUDIO_ONLY = 'Audio Only'
-
-        @staticmethod
-        def get(quality: str) -> str:
-            qualities = {'source': TwitchAPI.VideoQuality.SOURCE,
-                         '720p60': TwitchAPI.VideoQuality.Q720P60,
-                         '720p30': TwitchAPI.VideoQuality.Q720P30,
-                         '480p30': TwitchAPI.VideoQuality.Q480P30,
-                         '360p30': TwitchAPI.VideoQuality.Q360P30,
-                         '160p30': TwitchAPI.VideoQuality.Q160P30,
-                         'audio only': TwitchAPI.VideoQuality.AUDIO_ONLY}
-            return qualities[quality]
-
     API_DOMAIN: str = 'https://api.twitch.tv'
     KRAKEN: str = '/kraken'
     API: str = '/api'
@@ -126,16 +105,16 @@ class TwitchAPI:
         request = self._request_get('streams', params=params)
         return request.json()
 
-    def get_video_playlist_uri(self, _id: str, *, quality: str = VideoQuality.SOURCE) -> str:
-        logger.debug(f'Retrieving playlist: {_id} {quality}')
+    def get_video_playlist_uri(self, _id: str, *, group_id: str = 'chunked') -> str:
+        logger.debug(f'Retrieving playlist: {_id} {group_id}')
         vod_id = _id.lstrip('v')
         token = self._get_token(vod_id)
         variant_playlist: M3U8 = self._get_variant_playlist(vod_id=vod_id, token=token)
         try:
             return next(playlist.uri for playlist in variant_playlist.playlists if
-                        playlist.media[0].name == quality)
+                        playlist.media[0].group_id == group_id)
         except StopIteration as _:
-            msg = f"Got '{quality}' while expected one of {[_.media[0].name for _ in variant_playlist.playlists]}"
+            msg = f"Got '{group_id}' while expected one of {[_.media[0].group_id for _ in variant_playlist.playlists]}"
             logger.exception(msg)
             raise InvalidStreamQuality(msg) from _
 

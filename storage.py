@@ -4,7 +4,7 @@ import shutil
 from tempfile import NamedTemporaryFile
 from time import monotonic as clock
 from time import sleep
-from typing import Dict, List, Any, Optional, TypeVar, Iterator
+from typing import Dict, List, Any, Optional, TypeVar, Iterator, IO
 from urllib.parse import urljoin
 
 # noinspection PyPackageRequirements
@@ -40,7 +40,7 @@ class TwitchVideo:
         self.view = view
 
         self.download_done: bool = False
-        self.file = NamedTemporaryFile(suffix='.ts', delete=False, dir=self.temp_dir)
+        self.file: Optional[IO[bytes]] = None
 
     @property
     def title(self) -> str:
@@ -90,6 +90,7 @@ class TwitchVideo:
             for j in range(0, len(_list), size):
                 yield _list[j:j + size]
 
+        self.file = NamedTemporaryFile(suffix='.ts', delete=False, dir=self.temp_dir)
         playlist = _m3u8_from_uri(self._get_playlist_uri())
         with self.file:
             logger.info(f'Create temporary file {self.file.name}')
@@ -137,7 +138,7 @@ class TwitchVideo:
                 playlist = _m3u8_from_uri(self._get_playlist_uri() if is_slow else playlist.base_path)
 
     def _get_playlist_uri(self) -> str:
-        return self.api.get_video_playlist_uri(self.id, quality=self.quality)
+        return self.api.get_video_playlist_uri(self.id, group_id=self.quality)
 
     @staticmethod
     def _validate_info(info: Dict) -> None:
@@ -157,30 +158,37 @@ class Storage:
         self.last_added_id: Optional[str] = None
 
     def add_broadcast(self, broadcast: TwitchVideo) -> None:
-        def _sanitize(filename: str, replace_to: str = '') -> str:
-            excepted_chars = list(r':;/\?|*<>.')
-            for char in excepted_chars:
-                filename = filename.replace(char, replace_to)
-            return filename
+        if broadcast.file:
+            def _sanitize(filename: str, replace_to: str = '') -> str:
+                excepted_chars = list(r':;/\?|*<>.')
+                for char in excepted_chars:
+                    filename = filename.replace(char, replace_to)
+                return filename
 
-        new_path = self.broadcast_path.format(title=_sanitize(broadcast.title, replace_to='_'),
-                                              id=broadcast.id,
-                                              type=broadcast.broadcast_type,
-                                              channel=broadcast.channel,
-                                              game=_sanitize(broadcast.game, replace_to='_'),
-                                              date=dateutil.parser.parse(broadcast.created_at))
-        new_path = os.path.join(self.path, new_path)
-        os.makedirs(os.path.dirname(new_path), exist_ok=True)
-        while os.path.exists(new_path):
-            name, ext = os.path.splitext(new_path)
-            new_path = name + '+' + ext
-        logger.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
-        shutil.move(broadcast.file.name, new_path)
-        os.chmod(new_path, 0o755)
-        self.last_added_id = broadcast.id
+            new_path = self.broadcast_path.format(title=_sanitize(broadcast.title, replace_to='_'),
+                                                  id=broadcast.id,
+                                                  type=broadcast.broadcast_type,
+                                                  channel=broadcast.channel,
+                                                  game=_sanitize(broadcast.game, replace_to='_'),
+                                                  date=dateutil.parser.parse(broadcast.created_at))
+            new_path = os.path.join(self.path, new_path)
+            os.makedirs(os.path.dirname(new_path), exist_ok=True)
+            while os.path.exists(new_path):
+                name, ext = os.path.splitext(new_path)
+                new_path = name + '+' + ext
+            logger.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
+            shutil.move(broadcast.file.name, new_path)
+            os.chmod(new_path, 0o755)
+            self.last_added_id = broadcast.id
+        else:
+            raise MissingFile('Broadcast has not downloaded yet')
 
 
 def _m3u8_from_uri(playlist_uri: str) -> M3U8:
     base_uri = urljoin(playlist_uri, '.')
     request = request_get_retried(playlist_uri)
     return M3U8(request.text, base_path=playlist_uri, base_uri=base_uri)
+
+
+class MissingFile(IOError):
+    pass
