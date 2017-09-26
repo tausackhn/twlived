@@ -3,21 +3,24 @@ from typing import Dict
 
 from ruamel.yaml import safe_load as yaml_load
 
-BASIC_CONFIG = '''\
+CONFIG_FILE = 'config.yaml'
+CONFIG_VERSION = 1
+BASIC_CONFIG = f'''\
+version: {CONFIG_VERSION}
 twitch:
     client_id: <your client-id>
 
 main:
     channel: <twitch channel>
-    # Could be one of (source, high, medium, low, mobile, audio only)
+    # Depends on stream. Leave blank for source (chunked) quality.
     quality: <quality>
     temp_dir: <path to temporary directory>
 
 storage:
     path: <path where vods should be stored>
-    # Python 3.6 f-string. Valid arguments: {title} {id} {type} {channel} {game} {date}
+    # Python 3.6 f-string. Valid arguments: {{title}} {{id}} {{type}} {{channel}} {{game}} {{date}}
     # '*' will be added to the new filename if file already exist in storage
-    vod_path: <"{channel}/{id} {date:%Y-%m-%d} {title}.ts">
+    vod_path: <"{{channel}}/{{id}} {{date:%Y-%m-%d}} {{title}}.ts">
 
 telegram:
     enabled: False
@@ -26,7 +29,7 @@ telegram:
 '''
 
 
-def init(path: str = 'config.yaml') -> Dict:
+def init(path: str = CONFIG_FILE) -> Dict:
     if not Path(path).exists():
         create(path)
         print(f'Please check configuration file {path}')
@@ -52,6 +55,8 @@ def validate(config: dict) -> None:
     main_keys = {'channel', 'quality', 'temp_dir'}
     storage_keys = {'path', 'vod_path'}
     error_msg = "'{key}' is empty or some keys missing {keys}"
+    if not config.get('version') or config['version'] != CONFIG_VERSION:
+        raise ValidationConfigError(f'Configuration file {CONFIG_FILE} does not match. Try to create a new one.')
     if not groups.issubset(config.keys()):
         raise ValidationConfigError(f'Some keys missing {groups - config.keys()}')
     if not config['twitch'] or not twitch_keys.issubset(config['twitch'].keys()):
@@ -63,4 +68,5 @@ def validate(config: dict) -> None:
 
 
 class ValidationConfigError(Exception):
-    pass
+    def __init__(self, message: str) -> None:
+        self.message: str = message
