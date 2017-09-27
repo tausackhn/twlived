@@ -35,20 +35,15 @@ except config.ValidationConfigError as e:
     exit(1)
 
 
-def delay_generator(maximum: int, step: int) -> Generator[int, int, None]:
-    i = step
+def const_generator(value: int) -> Generator[int, int, None]:
     while True:
-        while i <= maximum:
-            value = (yield i)
-            if value is not None:
-                i = value
-            else:
-                i += step
-        while True:
-            value = (yield maximum)
-            if value is not None:
-                i = value
-                break
+        yield value
+
+
+def delay_generator(maximum: int, step: int) -> Generator[int, int, None]:
+    while True:
+        yield from range(step, maximum, step)
+        yield from const_generator(maximum)
 
 
 @retry(retry=retry_on(NoValidVideo), wait=wait_fixed(10), stop=stop_after_attempt(30), reraise=True)
@@ -73,8 +68,7 @@ def process() -> None:
                     if stream_video.id != _storage.last_added_id:
                         stream_video.download()
                         _storage.add_broadcast(stream_video)
-                        # TODO: Catch just-started generator
-                        delay.send(0)
+                        delay = delay_generator(900, 60)
             # VOD obtain status `recording` before stream API changed status to `offline`
             except NoValidVideo:
                 pass
