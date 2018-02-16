@@ -1,194 +1,228 @@
-import json
-import os
+import shelve
 import shutil
+from itertools import count
+from pathlib import Path
 from tempfile import NamedTemporaryFile
-from time import monotonic as clock
-from time import sleep
-from typing import Dict, List, Any, Optional, TypeVar, Iterator, IO
+from time import monotonic, sleep
+from typing import Dict, List, Optional, TypeVar, Tuple, Any, Callable, ClassVar, Union, Set
 from urllib.parse import urljoin
 
-# noinspection PyPackageRequirements
-import dateutil.parser
-from m3u8 import M3U8  # type: ignore
-from requests import HTTPError
-from tenacity import retry, wait_fixed, stop_after_attempt
-from tenacity import retry_if_exception_type as retry_on
+import requests
+from iso8601 import parse_date
+from m3u8 import M3U8
+from pydantic import BaseModel
 
 from config_logging import LOG
-from network import request_get_retried
 from twitch_api import TwitchAPI
-from view import ViewEvent, View
+from utils import split_by, chunked, sanitize_filename
+from view import View
 
-logger = LOG.getChild(__name__)  # pylint: disable=invalid-name
+logger = LOG.getChild(__name__)
 
 T = TypeVar('T')
 
 
-class TwitchVideo:
-    _schema = None
-
-    def __init__(self, view: View, info: Dict[str, Any], api: TwitchAPI, quality: str, temp_dir: str = '.') -> None:
-        if not TwitchVideo._schema:
-            with open('video_info.schema') as json_data:
-                TwitchVideo._schema = json.load(json_data)
-        self._validate_info(info)
-
-        self.info = info
-        self.api = api
-        self.quality = quality
-        self.temp_dir = temp_dir
-        self.view = view
-
-        self.download_done: bool = False
-        self.file: Optional[IO[bytes]] = None
-
-    @property
-    def title(self) -> str:
-        return self.info['title']
-
-    @property
-    def broadcast_id(self) -> str:
-        return self.info['broadcast_id']
-
-    @property
-    def id(self) -> str:
-        return self.info['_id']
-
-    @property
-    def created_at(self) -> str:
-        return self.info['created_at']
-
-    @property
-    def game(self) -> str:
-        return self.info['game']
-
-    @property
-    def broadcast_type(self) -> str:
-        return self.info['broadcast_type']
-
-    @property
-    def channel(self) -> str:
-        return self.info['channel']['name']
+class TwitchVideo(BaseModel):
+    title: str
+    _id: str
+    broadcast_id: int
+    broadcast_type: str
+    channel: Dict[str, Any]
+    created_at: str
+    game: str
+    status: str
 
     @property
     def is_recording(self) -> bool:
-        return self.info['status'] != 'recorded'
+        return self.status != 'recorded'
 
-    def download(self) -> None:
-        def get_newest(_list: List[T], element: Optional[T] = None) -> List[T]:
-            if not element:
-                return _list
-            for i, _ in reversed(list(enumerate(_list))):
-                if _ == element:
-                    return _list[i + 1:]
-            return []
+    @property
+    def id(self) -> str:
+        return self._id
 
-        def download_segment(segment_: str) -> bytes:
-            return request_get_retried(segment_).content
+    class Config:
+        ignore_extra = False
+        allow_extra = True
 
-        def chunks(_list: List[T], size: int) -> Iterator[List[T]]:
-            for j in range(0, len(_list), size):
-                yield _list[j:j + size]
 
-        self.file = NamedTemporaryFile(suffix='.ts', delete=False, dir=self.temp_dir)
-        playlist = _m3u8_from_uri(self._get_playlist_uri())
-        with self.file:
-            logger.info(f'Create temporary file {self.file.name}')
-            logger.info(f'Start downloading: {self.id}')
-            info = type('Info', (object,), dict(id=self.id, channel=self.channel))
-            self.view(ViewEvent.StartDownloading, info=info)
-            last_downloaded = None
-            total_completed_segments = 0
-            while True:
-                segments = get_newest(playlist.files, last_downloaded)
-                total_segments = len(playlist.files)
-                completed_segments = 0
-                is_slow = False
-                chunks_downloaded = False
-                try:
-                    for chunk in chunks(segments, 10):
-                        start_time = clock()
-                        for segment in chunk:
-                            content = download_segment(playlist.base_uri + segment)
-                            self.file.write(content)
-                            last_downloaded = segment
-                            completed_segments += 1
-                            total_completed_segments += 1
-                            info = type('Info', (object,), dict(completed_segments=completed_segments,
-                                                                segments=len(segments),
-                                                                total_completed_segments=total_completed_segments,
-                                                                total_segments=total_segments))
-                            self.view(ViewEvent.ProgressInfo, info=info)
-                        if clock() - start_time > 50:
-                            is_slow = True
-                            break
-                    else:
-                        chunks_downloaded = True
-                except HTTPError:
-                    is_slow = True
-                # TODO: write a better detecting method for finished VODs.
-                # TwitchAPI bug occurs sometime. Finished VOD can have 'status' == 'recording'.
-                if chunks_downloaded:
-                    if self.is_recording:
-                        sleep(30)
-                    else:
-                        self.view(ViewEvent.StopDownloading)
+class TwitchPlaylist:
+    def __init__(self, video_id: str, quality: str, variant_playlist_fetch: Callable[[], str]):
+        self.video_id = video_id
+        self.quality = quality
+        self._m3u8: Optional[M3U8] = None
+        self._url: Optional[str] = None
+        self._variant_m3u8: Optional[M3U8] = None
+        self._variant_fetch: Callable[[], str] = variant_playlist_fetch
+
+    @property
+    def m3u8(self):
+        if not self._m3u8:
+            self.update()
+        return self._m3u8
+
+    @property
+    def files(self):
+        return self.m3u8.files
+
+    @property
+    def base_uri(self):
+        return urljoin(self._url, '.')
+
+    @property
+    def url(self):
+        if not self._url:
+            self._url = self._get_playlist_url()
+        return self._url
+
+    def update(self, use_old_url: bool = False):
+        if not use_old_url:
+            self._url = self._get_playlist_url()
+        # TODO: обернуть сетевые запросы
+        request = requests.get(self.url)
+        self._m3u8 = M3U8(request.text)
+
+    def _get_playlist_url(self) -> str:
+        logger.debug(f'Retrieving playlist: {self.video_id} {self.quality}')
+        self._variant_m3u8 = M3U8(self._variant_fetch())
+        try:
+            return next(playlist.uri for playlist in self._variant_m3u8.playlists if
+                        playlist.media[0].group_id == self.quality)
+        except StopIteration:
+            qualities = [playlist.media[0].group_id for playlist in self._variant_m3u8.playlists]
+            msg = f"Got '{self.quality}' while expected one of {qualities}"
+            logger.exception(msg)
+            raise
+
+
+class TwitchDownloadManager:
+    _CHUNK_SIZE = 10
+    _TIME_LIMIT = _CHUNK_SIZE * 5
+    _SLEEP_TIME = 30
+
+    def __init__(self, twitch_api: TwitchAPI, temporary_folder: Path):
+        self._twitch_api = twitch_api
+        self.temporary_folder = temporary_folder
+
+    def download(self, video_id: str, *,
+                 quality: str = 'chunked',
+                 callback: View = None) -> Tuple[TwitchVideo, Path]:
+        video = TwitchVideo(**self._twitch_api.get_video(video_id))
+        if video.broadcast_type == 'archive':
+            return self._download_archive(video.id, quality=quality, callback=callback)
+
+    def _download_archive(self, video_id: str, quality: str,
+                          callback: View = None) -> Tuple[TwitchVideo, Path]:
+        # TODO: сделать вызов callback.
+        with NamedTemporaryFile(suffix='.ts', delete=False, dir=self.temporary_folder) as file:
+            logger.info(f'Create temporary file {file.name}')
+            playlist = TwitchPlaylist(video_id, quality=quality,
+                                      variant_playlist_fetch=lambda: self._twitch_api.get_variant_playlist(video_id))
+            downloaded = is_recording = False
+            last_segment: Optional[str] = None
+            logger.info(f'Start downloading {video_id} with {quality} quality')
+            while not downloaded or is_recording:
+                # TODO: обернуть сетевые запросы
+                is_recording = TwitchVideo(**self._twitch_api.get_video(video_id)).is_recording
+                playlist.update(use_old_url=downloaded)
+                # FIXME: возможна ситуация, когда в обновлённом плейлисте ещё нет last_segment.
+                # Это приведёт к загрузке всего видео с начала
+                _, segments_to_load = split_by(playlist.files, last_segment)
+                downloaded = False
+                for chunk in chunked(segments_to_load, self._CHUNK_SIZE):
+                    start_time = monotonic()
+                    content, last_segment = self._download_chunks(playlist.base_uri, chunk)
+                    file.write(content)
+                    if monotonic() - start_time > self._TIME_LIMIT:
                         break
-                self._update_info()
-                playlist = _m3u8_from_uri(self._get_playlist_uri() if is_slow else playlist.base_path)
-
-    def _get_playlist_uri(self) -> str:
-        return self.api.get_video_playlist_uri(self.id, group_id=self.quality)
+                else:
+                    downloaded = True
+                if is_recording and downloaded:
+                    sleep(self._SLEEP_TIME)
+            logger.info(f'Downloading {video_id} with {quality} quality successful')
+            return TwitchVideo(**self._twitch_api.get_video(video_id)), Path(file.name)
 
     @staticmethod
-    def _validate_info(info: Dict) -> None:
-        from jsonschema import validate  # type: ignore
-        validate(info, TwitchVideo._schema)
-
-    @retry(retry=retry_on(HTTPError), wait=wait_fixed(60), stop=stop_after_attempt(30))
-    def _update_info(self) -> None:
-        self.info = self.api.get_video(self.id)
+    def _download_chunks(base_uri: str, segments: List[str]) -> Tuple[bytes, Optional[str]]:
+        content = b''
+        last_segment = None
+        for chunk in segments:
+            # TODO: retry download on error or throw Exception
+            content += requests.get(base_uri + chunk).content
+            last_segment = chunk
+        return content, last_segment
 
 
 class Storage:
-    def __init__(self, storage_path: str = '.', vod_path_template: str = '{id} {date:%Y-%m-%d}.ts') -> None:
-        self.path = os.path.abspath(storage_path)
-        os.makedirs(storage_path, exist_ok=True)
-        self.broadcast_path = vod_path_template
-        self.last_added_id: Optional[str] = None
+    DB_FILENAME: ClassVar[str] = 'twlived_db'
+    _ALLOWED_BROADCAST_TYPES: ClassVar[Set[str]] = {'archive'}
 
-    def add_broadcast(self, broadcast: TwitchVideo) -> None:
-        if broadcast.file:
-            def _sanitize(filename: str, replace_to: str = '') -> str:
-                excepted_chars = list(r':;/\?|*<>.')
-                for char in excepted_chars:
-                    filename = filename.replace(char, replace_to)
-                return filename
+    def __init__(self, storage_path: Union[Path, str], vod_path_template: str = '{id} {date:%Y-%m-%d}.ts') -> None:
+        self.path = Path(storage_path)
+        self.broadcast_template = vod_path_template
+        self._vod_ids: List[str] = []
+        self._create_storage_dir()
+        self._db: shelve.DbfilenameShelf = shelve.DbfilenameShelf(str(self.path.joinpath(self.DB_FILENAME).resolve()))
 
-            new_path = self.broadcast_path.format(title=_sanitize(broadcast.title, replace_to='_'),
-                                                  id=broadcast.id,
-                                                  type=broadcast.broadcast_type,
-                                                  channel=broadcast.channel,
-                                                  game=_sanitize(broadcast.game, replace_to='_'),
-                                                  date=dateutil.parser.parse(broadcast.created_at))
-            new_path = os.path.join(self.path, new_path)
-            os.makedirs(os.path.dirname(new_path), exist_ok=True)
-            while os.path.exists(new_path):
-                name, ext = os.path.splitext(new_path)
-                new_path = name + '+' + ext
-            logger.info(f'Moving file to storage: {broadcast.file.name} to {new_path}')
-            shutil.move(broadcast.file.name, new_path)
-            os.chmod(new_path, 0o755)
-            self.last_added_id = broadcast.id
+    def added_broadcast_ids(self, broadcast_type: str) -> Set[str]:
+        if broadcast_type in self._ALLOWED_BROADCAST_TYPES:
+            if broadcast_type not in self._db:
+                self._db[broadcast_type] = {}
+            return set(self._db[broadcast_type])
+        raise DBNotAllowedBroadcastType(f'{broadcast_type} are not allowed for database file')
+
+    def add_broadcast(self, broadcast: TwitchVideo, temp_file: Path, exist_ok: bool = False) -> None:
+        logger.info(f'Adding broadcast {broadcast.id} related to {temp_file.resolve()}')
+        if not exist_ok and broadcast.id in self._vod_ids:
+            raise BroadcastExistsError(f'{broadcast.id} already added')
+        if not temp_file.exists():
+            raise MissingFile(f'No such file {temp_file.resolve()} when {broadcast.id} is adding')
+        params = {
+            'title': sanitize_filename(broadcast.title, replace_to='_'),
+            'id': broadcast.id,
+            'type': broadcast.broadcast_type,
+            'channel': broadcast.channel,
+            'game': sanitize_filename(broadcast.game, replace_to='_'),
+            'date': parse_date(broadcast.created_at),
+        }
+        new_path = self.path.joinpath(Path(self.broadcast_template.format(**params)))
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        for i in count():
+            if new_path.exists():
+                new_path = new_path.with_suffix(new_path.suffix + f'.{i:02}')
+            else:
+                break
+        logger.info(f'Moving file to storage {temp_file.resolve()} to {new_path.resolve()}')
+        shutil.move(temp_file, new_path)
+        new_path.chmod(0o755)
+        logger.info(f'File {temp_file.resolve()} moved successful')
+        self.update_db(broadcast, new_path)
+
+    def _create_storage_dir(self):
+        self.path.mkdir(parents=True, exist_ok=True)
+        if not self.path.is_dir():
+            raise NotADirectoryError('Storage path is not a directory')
+
+    def update_db(self, broadcast: TwitchVideo, file: Path):
+        if broadcast.id in self._db[broadcast.broadcast_type]:
+            self._db[broadcast.broadcast_type][broadcast.id]['files'].append(file.relative_to(self.path))
         else:
-            raise MissingFile('Broadcast has not downloaded yet')
+            self._db[broadcast.broadcast_type][broadcast.id] = {
+                'info': broadcast,
+                'files': [file.relative_to(self.path)],
+            }
 
 
-def _m3u8_from_uri(playlist_uri: str) -> M3U8:
-    base_uri = urljoin(playlist_uri, '.')
-    request = request_get_retried(playlist_uri)
-    return M3U8(request.text, base_path=playlist_uri, base_uri=base_uri)
+class BroadcastExistsError(FileExistsError):
+    pass
 
 
 class MissingFile(IOError):
+    pass
+
+
+class DBError(BaseException):
+    pass
+
+
+class DBNotAllowedBroadcastType(DBError):
     pass

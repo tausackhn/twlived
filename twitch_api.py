@@ -6,27 +6,12 @@ from typing import Dict, List, Callable, Tuple, Any, TypeVar, Optional
 from urllib.parse import urljoin
 
 import requests
-from m3u8 import M3U8  # type: ignore
+
+from utils import method_dispatch
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 T = TypeVar('T')
-
-
-def method_dispatch(func: Callable[..., T]) -> Callable[..., T]:
-    """
-    Single-dispatch class method decorator
-    Works like functools.singledispatch for none-static class methods.
-    """
-    dispatcher = functools.singledispatch(func)
-
-    @functools.wraps(func)
-    def wrapper(*args: Any, **_: Any) -> T:
-        return dispatcher.dispatch(args[1].__class__)(*args, **_)
-
-    # issue: https://github.com/python/mypy/issues/708
-    wrapper.register = dispatcher.register  # type: ignore
-    return wrapper
 
 
 def token_storage(func: Callable[[Any, str], Dict]) -> Callable[[Any, str], Dict]:
@@ -59,9 +44,8 @@ class TwitchAPI:
     MAX_IDS: int = 100
     headers: Dict[str, str] = {'Accept': 'application/vnd.twitchtv.v5+json'}
 
-    def __init__(self, client_id: str, *, fetch: Callable = requests.get) -> None:
+    def __init__(self, client_id: str) -> None:
         self.headers.update({'Client-ID': client_id})
-        self._fetch = fetch
         # Take unbound method. Make an usual function using partial()
         # issue: https://github.com/python/mypy/issues/1484
         self._get_user_id = self._UserIDStorage(functools.partial(TwitchAPI._get_user_id_, self))  # type: ignore
@@ -72,7 +56,7 @@ class TwitchAPI:
     def get_stream(self, channel: str) -> Dict:
         logger.debug(f'Retrieving stream status: {channel}')
         channel_id = self._get_user_id(channel)
-        request = self._request_get(f'streams/{channel_id}')
+        request = self.__kraken_get(f'streams/{channel_id}')
         return request.json()
 
     def get_stream_status(self, channel: str) -> str:
@@ -102,21 +86,8 @@ class TwitchAPI:
                   'limit': str(limit),
                   'offset': str(offset)}
         params = {key: value for key, value in params.items() if value}
-        request = self._request_get('streams', params=params)
+        request = self.__kraken_get('streams', params=params)
         return request.json()
-
-    def get_video_playlist_uri(self, _id: str, *, group_id: str = 'chunked') -> str:
-        logger.debug(f'Retrieving playlist: {_id} {group_id}')
-        vod_id = _id.lstrip('v')
-        token = self._get_token(vod_id)
-        variant_playlist: M3U8 = self._get_variant_playlist(vod_id=vod_id, token=token)
-        try:
-            return next(playlist.uri for playlist in variant_playlist.playlists if
-                        playlist.media[0].group_id == group_id)
-        except StopIteration as _:
-            msg = f"Got '{group_id}' while expected one of {[_.media[0].group_id for _ in variant_playlist.playlists]}"
-            logger.exception(msg)
-            raise InvalidStreamQuality(msg) from _
 
     def get_videos(self, channel: str, *, broadcast_type: str = 'archive', require_all: bool = False) -> List[Dict]:
         logger.debug(f'Retrieving videos: {channel} {broadcast_type} require_all={require_all}')
@@ -126,7 +97,7 @@ class TwitchAPI:
         videos: List[Dict] = []
 
         while True:
-            request = self._request_get(f'channels/{channel_id}/videos',
+            request = self.__kraken_get(f'channels/{channel_id}/videos',
                                         params={'broadcast_type': broadcast_type,
                                                 'offset': str(offset),
                                                 'limit': str(limit)})
@@ -139,14 +110,14 @@ class TwitchAPI:
 
     def get_video(self, id_: str) -> Dict:
         logger.debug(f'Retrieving video: {id_}')
-        request = self._request_get(f'videos/{id_}')
+        request = self.__kraken_get(f'videos/{id_}')
         return request.json()
 
     def get_channel_info(self, channel: str) -> Dict:
         logger.debug(f'Retrieving channel info: {channel}')
         channel_id = self._get_user_id(channel)
         if channel_id:
-            request = self._request_get(f'channels/{channel_id}')
+            request = self.__kraken_get(f'channels/{channel_id}')
             return request.json()
         else:
             raise NonexistentChannel(channel)
@@ -162,19 +133,19 @@ class TwitchAPI:
     @token_storage
     def _get_token(self, vod_id: str) -> Dict:
         logger.debug(f'Retrieving token: {vod_id}')
-        request = self._request_get(f'vods/{vod_id}/access_token',
-                                    domain=f'{TwitchAPI.API_DOMAIN}{TwitchAPI.API}/',
-                                    params={'need_https': 'true'})
+        request = self.__api_get(f'vods/{vod_id}/access_token', params={'need_https': 'true'})
         return request.json()
 
-    def _get_variant_playlist(self, vod_id: str, token: Dict) -> M3U8:
+    def get_variant_playlist(self, vod_id: str) -> str:
+        vod_id = vod_id.lstrip('v')
+        token = self._get_token(vod_id)
         logger.debug(f'Retrieving variant playlist: {vod_id} {token}')
-        request = self._request_get(f'vod/{vod_id}', domain=TwitchAPI.USHER_DOMAIN,
-                                    params={'nauthsig': token['sig'],
-                                            'nauth': token['token'],
-                                            'allow_source': 'true',
-                                            'allow_audio_only': 'true'})
-        return M3U8(request.text)
+        request = self.__get(f'vod/{vod_id}', domain=TwitchAPI.USHER_DOMAIN,
+                             params={'nauthsig': token['sig'],
+                                     'nauth': token['token'],
+                                     'allow_source': 'true',
+                                     'allow_audio_only': 'true'})
+        return request.text
 
     # pylint: disable=too-few-public-methods
     class _UserIDStorage:
@@ -188,7 +159,7 @@ class TwitchAPI:
             self._get_items = get_items
 
         @method_dispatch
-        def __call__(self, arg: Any) -> Any:
+        def __call__(self, _: Any) -> Any:
             raise ValueError
 
         # issue: https://github.com/python/mypy/issues/708
@@ -217,7 +188,7 @@ class TwitchAPI:
         logger.debug(f'Retrieving user-id: {len(usernames)} {usernames}')
         if len(usernames) > TwitchAPI.MAX_IDS:
             raise TwitchAPIError('Too much usernames. Must be <= 100')
-        request = self._request_get('users', params={'login': ','.join(usernames)})
+        request = self.__kraken_get('users', params={'login': ','.join(usernames)})
         users = request.json()['users']
         existing_usernames = {user['name'] for user in users}
         # Existing usernames
@@ -226,15 +197,16 @@ class TwitchAPI:
         ids.extend([(username, None) for username in usernames if username not in existing_usernames])
         return ids
 
-    def _request_get(self, path: str, *,
-                     domain: Optional[str] = None,
-                     params: Optional[Dict] = None) -> requests.Response:
-        if not domain:
-            url = urljoin(f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/', path)
-        else:
-            url = urljoin(domain, path)
-        request = self._fetch(url, params, headers=self.headers)
+    def __get(self, path: str, domain: str, *, params: Optional[Dict] = None) -> requests.Response:
+        url = urljoin(domain, path)
+        request = requests.get(url, params, headers=self.headers)
         return request
+
+    def __kraken_get(self, path: str, *, params: Optional[Dict[str, str]] = None) -> requests.Response:
+        return self.__get(path, domain=f'{TwitchAPI.API_DOMAIN}{TwitchAPI.KRAKEN}/', params=params)
+
+    def __api_get(self, path: str, *, params: Optional[Dict[str, str]] = None) -> requests.Response:
+        return self.__get(path, domain=f'{TwitchAPI.API_DOMAIN}{TwitchAPI.API}/', params=params)
 
 
 class TwitchAPIError(Exception):
