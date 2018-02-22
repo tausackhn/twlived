@@ -34,16 +34,9 @@ loggers:
             - requests_handler
         propagate: no
 
-    twitch_api:
-        level: DEBUG
-        handlers:
-            - log_file_handler
-        propagate: no
-
-    log:
+    twlived:
         level: DEBUG
         handlers:
             - console_handler
             - log_file_handler
         propagate: no
-

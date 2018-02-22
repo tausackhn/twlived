@@ -1,15 +1,15 @@
 import functools
 import json
-import logging
 from time import time as utc
 from typing import Dict, List, Callable, Tuple, Any, TypeVar, Optional
 from urllib.parse import urljoin
 
 import requests
 
-from utils import method_dispatch
+from .config_logging import log
+from .utils import method_dispatch
 
-logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+log = log.getChild('TwitchAPI')
 
 T = TypeVar('T')
 
@@ -44,8 +44,9 @@ class TwitchAPI:
     MAX_IDS: int = 100
     headers: Dict[str, str] = {'Accept': 'application/vnd.twitchtv.v5+json'}
 
-    def __init__(self, client_id: str) -> None:
+    def __init__(self, client_id: str, *, request_wrapper: Optional[Callable[[T], T]] = None) -> None:
         self.headers.update({'Client-ID': client_id})
+        self._request_wrapper = request_wrapper
         # Take unbound method. Make an usual function using partial()
         # issue: https://github.com/python/mypy/issues/1484
         self._get_user_id = self._UserIDStorage(functools.partial(TwitchAPI._get_user_id_, self))  # type: ignore
@@ -54,7 +55,7 @@ class TwitchAPI:
         self._get_user_id(channels)
 
     def get_stream(self, channel: str) -> Dict:
-        logger.debug(f'Retrieving stream status: {channel}')
+        log.debug(f'Retrieving stream status: {channel}')
         channel_id = self._get_user_id(channel)
         request = self.__kraken_get(f'streams/{channel_id}')
         return request.json()
@@ -71,9 +72,9 @@ class TwitchAPI:
                     stream_type: Optional[str] = None,
                     limit: int = 25, offset: int = 0) -> Dict:
         if isinstance(channels, list):
-            logger.debug(f'Retrieving streams info: {len(channels)} {channels}')
+            log.debug(f'Retrieving streams info: {len(channels)} {channels}')
         else:
-            logger.debug(f'Retrieving streams info: {game}, {language}, {stream_type}, {limit}, {offset}')
+            log.debug(f'Retrieving streams info: {game}, {language}, {stream_type}, {limit}, {offset}')
         if limit > 100:
             raise TwitchAPIError('Too much streams requested. Must be <= 100')
         channel_ids = self._get_user_id(channels) if channels else None
@@ -90,7 +91,7 @@ class TwitchAPI:
         return request.json()
 
     def get_videos(self, channel: str, *, broadcast_type: str = 'archive', require_all: bool = False) -> List[Dict]:
-        logger.debug(f'Retrieving videos: {channel} {broadcast_type} require_all={require_all}')
+        log.debug(f'Retrieving videos: {channel} {broadcast_type} require_all={require_all}')
         channel_id = self._get_user_id(channel)
         offset = 0
         limit = TwitchAPI.MAX_VIDEOS if require_all else TwitchAPI.DEFAULT_NUM_VIDEOS
@@ -109,12 +110,12 @@ class TwitchAPI:
         return videos
 
     def get_video(self, id_: str) -> Dict:
-        logger.debug(f'Retrieving video: {id_}')
+        log.debug(f'Retrieving video: {id_}')
         request = self.__kraken_get(f'videos/{id_}')
         return request.json()
 
     def get_channel_info(self, channel: str) -> Dict:
-        logger.debug(f'Retrieving channel info: {channel}')
+        log.debug(f'Retrieving channel info: {channel}')
         channel_id = self._get_user_id(channel)
         if channel_id:
             request = self.__kraken_get(f'channels/{channel_id}')
@@ -123,7 +124,7 @@ class TwitchAPI:
             raise NonexistentChannel(channel)
 
     def get_recording_videos(self, channel: str) -> List[Dict]:
-        logger.debug(f'Retrieving recording video: {channel}')
+        log.debug(f'Retrieving recording video: {channel}')
         last_broadcasts = self.get_videos(channel)
         recording_videos = [broadcast for broadcast in last_broadcasts if broadcast['status'] == 'recording']
         if not recording_videos:
@@ -132,14 +133,14 @@ class TwitchAPI:
 
     @token_storage
     def _get_token(self, vod_id: str) -> Dict:
-        logger.debug(f'Retrieving token: {vod_id}')
+        log.debug(f'Retrieving token: {vod_id}')
         request = self.__api_get(f'vods/{vod_id}/access_token', params={'need_https': 'true'})
         return request.json()
 
     def get_variant_playlist(self, vod_id: str) -> str:
         vod_id = vod_id.lstrip('v')
         token = self._get_token(vod_id)
-        logger.debug(f'Retrieving variant playlist: {vod_id} {token}')
+        log.debug(f'Retrieving variant playlist: {vod_id} {token}')
         request = self.__get(f'vod/{vod_id}', domain=TwitchAPI.USHER_DOMAIN,
                              params={'nauthsig': token['sig'],
                                      'nauth': token['token'],
@@ -147,7 +148,6 @@ class TwitchAPI:
                                      'allow_audio_only': 'true'})
         return request.text
 
-    # pylint: disable=too-few-public-methods
     class _UserIDStorage:
         """
         Class, which caches {username: user ID} for API methods.
@@ -170,14 +170,14 @@ class TwitchAPI:
         # issue: https://github.com/python/mypy/issues/708
         @__call__.register(list)  # type: ignore
         def _list(self, usernames: List[str]) -> List[Optional[str]]:
-            logger.debug(f'Retrieving user-id from IDStorage: {len(usernames)} {usernames}')
+            log.debug(f'Retrieving user-id from IDStorage: {len(usernames)} {usernames}')
             missing_names = [_ for _ in usernames if _ not in self.cache]
             if missing_names:
                 self._update(missing_names)
             return [self.cache[username] for username in usernames]
 
         def _update(self, items: List[str]) -> None:
-            logger.debug(f'Updating user-id: {len(items)} {items}')
+            log.debug(f'Updating user-id: {len(items)} {items}')
             max_id = TwitchAPI.MAX_IDS
             items_chunks = [items[i:i + max_id] for i in range(0, len(items), max_id)]
             for chunk in items_chunks:
@@ -185,7 +185,7 @@ class TwitchAPI:
                 self.cache.update(ids)
 
     def _get_user_id_(self, usernames: List[str]) -> List[Tuple[str, Optional[str]]]:
-        logger.debug(f'Retrieving user-id: {len(usernames)} {usernames}')
+        log.debug(f'Retrieving user-id: {len(usernames)} {usernames}')
         if len(usernames) > TwitchAPI.MAX_IDS:
             raise TwitchAPIError('Too much usernames. Must be <= 100')
         request = self.__kraken_get('users', params={'login': ','.join(usernames)})
@@ -199,7 +199,11 @@ class TwitchAPI:
 
     def __get(self, path: str, domain: str, *, params: Optional[Dict] = None) -> requests.Response:
         url = urljoin(domain, path)
-        request = requests.get(url, params, headers=self.headers)
+        if self._request_wrapper is not None:
+            get_url = self._request_wrapper(requests.get)
+        else:
+            get_url = requests.get
+        request = get_url(url, params, headers=self.headers)
         return request
 
     def __kraken_get(self, path: str, *, params: Optional[Dict[str, str]] = None) -> requests.Response:

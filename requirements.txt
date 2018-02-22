@@ -1,6 +1,5 @@
-dateutils==0.6.6
-jsonschema==2.6.0
-m3u8==0.3.3
-requests==2.18.4
-ruamel.yaml==0.15.34
-tenacity==4.4.0
+pydantic>=0.7.1
+iso8601>=0.1.12
+m3u8>=0.3.5
+strictyaml>=0.11.7
+requests>=2.18.4
