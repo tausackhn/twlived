@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
 from itertools import chain
-from typing import Type, Optional, Dict, List, TypeVar
+from typing import Type, Optional, Dict, List
 
 from pydantic import BaseModel
 
-E = TypeVar('E', bound='BaseEvent')
 
-
+# TODO: rewrite w/o pydantic and with read-only attributes
 class BaseEvent(BaseModel):  # type: ignore
     pass
 
@@ -15,11 +14,14 @@ class Provider:
     def __init__(self) -> None:
         self.subscribers: Dict[Type[BaseEvent], List['Subscriber']] = {}
 
-    def notify(self, event: E) -> None:
-        if BaseEvent in event.__class__.__bases__:
+    def notify(self, event: BaseEvent) -> None:
+        cls = event.__class__
+        if BaseEvent in cls.__bases__ or type in cls.__bases__:
             raise TypeError('BaseEvent instances can not be used as event. Only subclass of BaseEvent can be used.')
-        for subscriber in chain(self.subscribers.get(event.__class__.__bases__[0], []),
-                                self.subscribers.get(event.__class__, [])):
+        # TODO: remove ignore
+        # noinspection PyTypeChecker
+        for subscriber in chain(self.subscribers.get(cls.__bases__[0], []),  # type: ignore
+                                self.subscribers.get(cls, [])):  # type: ignore
             subscriber.handle(event)
 
     def subscribe(self, event_type: Type[BaseEvent], subscriber: 'Subscriber') -> None:

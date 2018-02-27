@@ -47,7 +47,7 @@ def create(path: str = CONFIG_FILE) -> None:
 
         comment_quality = 'Depends on stream. Leave blank for source (chunked) quality.'
         comment_vod_path = (
-            'Python 3.6 f-string. Valid arguments: {{title}} {{id}} {{type}} {{channel}} {{game}} {{date}}\n'
+            'Python 3.6 f-string. Valid arguments: {{title}} {{id}} {{type}} {{channel}} {{date}}\n'
             '\'*\' will be added to the new filename if file already exist in storage')
         config.as_marked_up()['main'].yaml_set_comment_before_after_key('quality', before=comment_quality, indent=2)
         config.as_marked_up()['storage'].yaml_set_comment_before_after_key('vod_path', before=comment_vod_path,

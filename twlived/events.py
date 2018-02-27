@@ -51,9 +51,5 @@ class DownloadingProgress(BaseModel):  # type: ignore
         self.total_downloaded_segments += 1
 
 
-class StorageEvent(BaseEvent):
-    pass
-
-
-class MovingFile(StorageEvent):
-    pass
+class ExceptionEvent(BaseEvent):
+    message: str
