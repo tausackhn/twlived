@@ -1,9 +1,19 @@
 .idea
 *.cache
-venv
-.mypy_cache
+venv/
+.mypy_cache/
 __pycache__/
+.venv/
 
+# Configuration files
 config.yaml
+
+# Log files
 *.log
 *.log.[0-9]
+
+# Shelve db files
+*.bak
+*.dat
+*.dir
+
