@@ -1,38 +1,64 @@
 from abc import ABC, abstractmethod
-from itertools import chain
-from typing import Type, Optional, Dict, List
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Type, Union
 
-from pydantic import BaseModel
+EventHandlerT = Callable[['BaseEvent'], None]
 
 
-# TODO: rewrite w/o pydantic and with read-only attributes
-class BaseEvent(BaseModel):  # type: ignore
+class BaseEventMeta(type):
+    def __new__(mcs, name, bases, dct, max_inheritance_level: int = 0):
+        cls = dataclass(super().__new__(mcs, name, bases, dct), frozen=True)  # type: ignore
+        cls.__max_inheritance_level__ = max_inheritance_level
+        cls.__inheritance_level__ = 0
+        for base in bases:
+            if hasattr(base, '__inheritance_level__') and cls.__inheritance_level__ <= base.__inheritance_level__:
+                cls.__max_inheritance_level__ = base.__max_inheritance_level__
+                cls.__inheritance_level__ = base.__inheritance_level__ + 1
+        if cls.__inheritance_level__ > cls.__max_inheritance_level__:
+            raise ValueError(
+                f'{cls.__name__} can not be created. Inheritance level {cls.__max_inheritance_level__} exceeded')
+        return cls
+
+
+class BaseEvent(metaclass=BaseEventMeta, max_inheritance_level=1):
     pass
 
 
 class Provider:
     def __init__(self) -> None:
-        self.subscribers: Dict[Type[BaseEvent], List['Subscriber']] = {}
+        self.subscribers: Dict[Type[BaseEvent], List['Subscriber']] = defaultdict(list)
 
     def notify(self, event: BaseEvent) -> None:
-        cls = event.__class__
-        if BaseEvent in cls.__bases__ or type in cls.__bases__:
-            raise TypeError('BaseEvent instances can not be used as event. Only subclass of BaseEvent can be used.')
-        # TODO: remove ignore
-        # noinspection PyTypeChecker
-        for subscriber in chain(self.subscribers.get(cls.__bases__[0], []),  # type: ignore
-                                self.subscribers.get(cls, [])):  # type: ignore
+        event_cls = type(event)
+        if event_cls == BaseEvent:
+            raise TypeError('BaseEvent instance can not be used as event. Supports only subclass instances.')
+
+        for subscriber in self.subscribers.get(event_cls, []):
             subscriber.handle(event)
 
-    def subscribe(self, event_type: Type[BaseEvent], subscriber: 'Subscriber') -> None:
-        self.subscribers.setdefault(event_type, []).append(subscriber)
+    def subscribe(self, event_type: Union[Type[BaseEvent], List[Type[BaseEvent]]], subscriber: 'Subscriber') -> None:
+        if isinstance(event_type, list):
+            for event_type_ in event_type:
+                self.subscribers[event_type_].append(subscriber)
+        else:
+            self.subscribers[event_type].append(subscriber)
 
-    def unsubscribe(self, event_type: Type[BaseEvent], subscriber: 'Subscriber') -> None:
-        self.subscribers[event_type].remove(subscriber)
+    def unsubscribe(self, event_type: Union[Type[BaseEvent], List[Type[BaseEvent]]], subscriber: 'Subscriber') -> None:
+        if isinstance(event_type, list):
+            for event_type_ in event_type:
+                self.subscribers[event_type_].remove(subscriber)
+        else:
+            self.subscribers[event_type].remove(subscriber)
 
-    def connect(self, *clients: 'ProviderClientMixin') -> None:
+    def connect(self, *clients: Union['ProviderClientMixin', EventHandlerT]) -> None:
         for client in clients:
-            client.connect_to(self)
+            if isinstance(client, ProviderClientMixin):
+                client.connect_to(self)
+            elif callable(client) and hasattr(client, '_subscriber'):
+                getattr(client, '_subscriber').connect_to(self)
+            else:
+                raise TypeError(f'{client} do not have connect_to method')
 
 
 class ProviderClientMixin:
@@ -48,9 +74,8 @@ class Publisher(ProviderClientMixin):
         super().__init__()
 
     def publish(self, event: BaseEvent) -> None:
-        if not self.provider:
-            raise AttributeError('No provider specified.')
-        self.provider.notify(event)
+        if self.provider:
+            self.provider.notify(event)
 
 
 class Subscriber(ProviderClientMixin, ABC):
@@ -70,3 +95,20 @@ class Subscriber(ProviderClientMixin, ABC):
     @abstractmethod
     def handle(self, event: BaseEvent) -> None:
         pass
+
+
+def handle(event_type: Type[BaseEvent], *,
+           message_center: Optional[Provider] = None) -> Callable[[EventHandlerT], EventHandlerT]:
+    def decorator(func: EventHandlerT) -> EventHandlerT:
+        if not hasattr(func, '_subscriber'):
+            class _Subscriber(Subscriber):
+                def handle(self, event: BaseEvent) -> None:
+                    func(event)
+
+            setattr(func, '_subscriber', _Subscriber())
+        if message_center:
+            getattr(func, '_subscriber').connect_to(message_center)
+        getattr(func, '_subscriber').subscribe(event_type)
+        return func
+
+    return decorator

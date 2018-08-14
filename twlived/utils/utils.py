@@ -3,13 +3,13 @@ import operator
 from collections import deque
 from itertools import repeat
 from time import sleep
-from typing import List, Tuple, Callable, Any, Generator, TypeVar, Iterator, Union, Type, Optional
+from typing import Any, Callable, Generator, Iterator, List, Optional, Sequence, Type, TypeVar, Union
 
 FT = Callable[..., Any]
 T = TypeVar('T')
 
 
-def retry_on_exception(exceptions: Union[Type[Exception], Tuple[Type[Exception]]],
+def retry_on_exception(exceptions: Union[Type[Exception], Sequence[Type[Exception]]],
                        wait: float = 2,
                        max_tries: int = Optional[None]) -> Callable[[FT], FT]:
     def decorator(f: FT) -> FT:
@@ -21,7 +21,7 @@ def retry_on_exception(exceptions: Union[Type[Exception], Tuple[Type[Exception]]
                 try:
                     # noinspection PyCallingNonCallable
                     result = f(*args, **kwargs)
-                except exceptions:
+                except tuple(exceptions):
                     if tries == max_tries:
                         raise
                     sleep(wait)
