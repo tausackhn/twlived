@@ -153,7 +153,7 @@ class TwitchAPIHelix(BaseAPI):
 
         if params:
             response = self._helix_get('users', params=params)
-            data, _ = self._extract_helix_data(response)
+            data = response['data']
             for user in data:
                 self._id_storage[user['id']] = user
                 self._login_storage[user['login']] = user
