@@ -33,7 +33,7 @@ class TwitchAPIHelix(BaseAPI):
 
     def __init__(self, client_id: str, *, client_secret: Optional[str] = None, retry: bool = False) -> None:
         super().__init__(retry=retry)
-        self._session.headers.update({'Client-ID': client_id})
+        self._headers.update({'Client-ID': client_id})
 
         self.client_secret = client_secret
 
@@ -42,15 +42,15 @@ class TwitchAPIHelix(BaseAPI):
         self._ratelimit_reset: Union[int, float] = time()
 
     # noinspection PyShadowingBuiltins
-    def get_streams(self, *,
-                    after: Optional[str] = None,
-                    before: Optional[str] = None,
-                    community_id: Optional[List[str]] = None,
-                    first: int = 20,
-                    game_id: Optional[List[str]] = None,
-                    language: Optional[List[str]] = None,
-                    user_id: Optional[List[str]] = None,
-                    user_login: Optional[List[str]] = None) -> HelixDataT:
+    async def get_streams(self, *,
+                          after: Optional[str] = None,
+                          before: Optional[str] = None,
+                          community_id: Optional[List[str]] = None,
+                          first: int = 20,
+                          game_id: Optional[List[str]] = None,
+                          language: Optional[List[str]] = None,
+                          user_id: Optional[List[str]] = None,
+                          user_login: Optional[List[str]] = None) -> HelixDataT:
         limited_size_args = {
             'community_id': len(community_id) if community_id is not None else 0,
             'game_id':      len(game_id) if game_id is not None else 0,
@@ -80,21 +80,21 @@ class TwitchAPIHelix(BaseAPI):
             'user_login':   user_login,
         }
 
-        response = self._helix_get('streams', params=params)
+        response = await self._helix_get('streams', params=params)
         return self._extract_helix_data(response)
 
     # noinspection PyShadowingBuiltins
-    def get_videos(self, *,
-                   id: Optional[List[str]] = None,
-                   user_id: Optional[str] = None,
-                   game_id: Optional[str] = None,
-                   after: Optional[str] = None,
-                   before: Optional[str] = None,
-                   first: int = 20,
-                   language: Optional[str] = None,
-                   period: str = 'all',
-                   sort: str = 'time',
-                   type: str = 'all') -> HelixDataT:
+    async def get_videos(self, *,
+                         id: Optional[List[str]] = None,
+                         user_id: Optional[str] = None,
+                         game_id: Optional[str] = None,
+                         after: Optional[str] = None,
+                         before: Optional[str] = None,
+                         first: int = 20,
+                         language: Optional[str] = None,
+                         period: str = 'all',
+                         sort: str = 'time',
+                         type: str = 'all') -> HelixDataT:
         num_args = sum(map(lambda x: int(x is not None), [id, user_id, game_id]))
         if num_args == 0:
             raise ValueError('Must provide one of the arguments: list of id, user_id, game_id')
@@ -126,14 +126,14 @@ class TwitchAPIHelix(BaseAPI):
             'type':     type,
         }
 
-        response = self._helix_get('videos', params=params)
+        response = await self._helix_get('videos', params=params)
         return self._extract_helix_data(response)
 
     # noinspection PyShadowingBuiltins
-    def get_users(self, *,
-                  id: Optional[List[str]] = None,
-                  login: Optional[List[str]] = None,
-                  update_storage: bool = False) -> List[JSONT]:
+    async def get_users(self, *,
+                        id: Optional[List[str]] = None,
+                        login: Optional[List[str]] = None,
+                        update_storage: bool = False) -> List[JSONT]:
         if not (id or login):
             raise ValueError('Specify one argument list of IDs or list of logins')
         if id and len(id) > TwitchAPIHelix.MAX_IDS:
@@ -143,33 +143,32 @@ class TwitchAPIHelix(BaseAPI):
 
         id, login = id or [], login or []
 
-        if update_storage:
-            missing_ids, missing_logins = id, login
+        if not update_storage:
+            missing_ids = filter(lambda x: x not in self._id_storage, id)
+            missing_logins = filter(lambda x: x not in self._login_storage, login)
         else:
-            missing_ids = list(filter(lambda x: x not in self._id_storage, id))
-            missing_logins = list(filter(lambda x: x not in self._login_storage, login))
+            missing_ids, missing_logins = iter(id), iter(login)
 
         params = [('id', id_) for id_ in missing_ids] + [('login', login_) for login_ in missing_logins]
 
         if params:
-            response = self._helix_get('users', params=params)
+            response = await self._helix_get('users', params=params)
             data = response['data']
             for user in data:
-                self._id_storage[user['id']] = user
-                self._login_storage[user['login']] = user
+                self._id_storage[user['id']] = self._login_storage[user['login']] = user
 
         return list(user for user in chain((self._id_storage.get(id_, None) for id_ in set(id)),
                                            (self._login_storage.get(login_, None) for login_ in set(login)))
                     if user is not None)
 
     # noinspection PyShadowingBuiltins
-    def get_clips(self, *,
-                  broadcaster_id: Optional[str] = None,
-                  game_id: Optional[str] = None,
-                  id: Optional[List[str]] = None,
-                  after: Optional[str] = None,
-                  before: Optional[str] = None,
-                  first: int = 20) -> HelixDataT:
+    async def get_clips(self, *,
+                        broadcaster_id: Optional[str] = None,
+                        game_id: Optional[str] = None,
+                        id: Optional[List[str]] = None,
+                        after: Optional[str] = None,
+                        before: Optional[str] = None,
+                        first: int = 20) -> HelixDataT:
         num_args = sum(map(lambda x: int(x is not None), [broadcaster_id, game_id, id]))
         if num_args == 0:
             raise ValueError('Must provide one of the arguments: list of id, broadcaster_id, game_id')
@@ -191,13 +190,13 @@ class TwitchAPIHelix(BaseAPI):
             'first':          str(first)
         }
 
-        response = self._helix_get('clips', params=params)
+        response = await self._helix_get('clips', params=params)
         return self._extract_helix_data(response)
 
     # noinspection PyShadowingBuiltins
-    def get_games(self, *,
-                  id: Optional[List[str]] = None,
-                  name: Optional[str] = None) -> List[JSONT]:
+    async def get_games(self, *,
+                        id: Optional[List[str]] = None,
+                        name: Optional[str] = None) -> List[JSONT]:
         num_args = sum(map(lambda x: int(x is not None), [id, name]))
         if num_args == 0:
             raise ValueError('Must provide one of the arguments: list of id, name')
@@ -211,14 +210,14 @@ class TwitchAPIHelix(BaseAPI):
             'name': name
         }
 
-        response = self._helix_get('games', params=params)
+        response = await self._helix_get('games', params=params)
         data, _ = self._extract_helix_data(response)
         return data
 
-    def get_top_games(self, *,
-                      after: Optional[str] = None,
-                      before: Optional[str] = None,
-                      first: int = 20) -> HelixDataT:
+    async def get_top_games(self, *,
+                            after: Optional[str] = None,
+                            before: Optional[str] = None,
+                            first: int = 20) -> HelixDataT:
         if after and before:
             raise ValueError('Provide only one pagination direction.')
         if first > TwitchAPIHelix.MAX_IDS:
@@ -230,18 +229,18 @@ class TwitchAPIHelix(BaseAPI):
             'first':  str(first)
         }
 
-        response = self._helix_get('games/top', params=params)
+        response = await self._helix_get('games/top', params=params)
         return self._extract_helix_data(response)
 
-    def get_streams_metadata(self, *,
-                             after: Optional[str] = None,
-                             before: Optional[str] = None,
-                             community_id: Optional[List[str]] = None,
-                             first: int = 20,
-                             game_id: Optional[List[str]] = None,
-                             language: Optional[List[str]] = None,
-                             user_id: Optional[List[str]] = None,
-                             user_login: Optional[List[str]] = None) -> HelixDataT:
+    async def get_streams_metadata(self, *,
+                                   after: Optional[str] = None,
+                                   before: Optional[str] = None,
+                                   community_id: Optional[List[str]] = None,
+                                   first: int = 20,
+                                   game_id: Optional[List[str]] = None,
+                                   language: Optional[List[str]] = None,
+                                   user_id: Optional[List[str]] = None,
+                                   user_login: Optional[List[str]] = None) -> HelixDataT:
         limited_size_args = {
             'community_id': len(community_id) if community_id is not None else 0,
             'game_id':      len(game_id) if game_id is not None else 0,
@@ -275,14 +274,14 @@ class TwitchAPIHelix(BaseAPI):
         # Headers:
         # Ratelimit-Helixstreamsmetadata-Limit: <int value>
         # Ratelimit-Helixstreamsmetadata-Remaining: <int value>
-        response = self._helix_get('streams/metadata', params=params)
+        response = await self._helix_get('streams/metadata', params=params)
         return self._extract_helix_data(response)
 
-    def get_users_follows(self, *,
-                          after: Optional[str] = None,
-                          first: int = 20,
-                          from_id: Optional[str] = None,
-                          to_id: Optional[str] = None):
+    async def get_users_follows(self, *,
+                                after: Optional[str] = None,
+                                first: int = 20,
+                                from_id: Optional[str] = None,
+                                to_id: Optional[str] = None):
         if not (from_id or to_id):
             raise ValueError('At minimum, from_id or to_id must be provided')
         if first > TwitchAPIHelix.MAX_IDS:
@@ -295,13 +294,13 @@ class TwitchAPIHelix(BaseAPI):
             'to_id':   to_id
         }
 
-        response = self._helix_get('users/follows', params=params)
+        response = await self._helix_get('users/follows', params=params)
         return self._extract_helix_data(response)
 
     @require_app_token
-    def get_webhook_subscriptions(self, *,
-                                  after: Optional[str] = None,
-                                  first: int = 20):
+    async def get_webhook_subscriptions(self, *,
+                                        after: Optional[str] = None,
+                                        first: int = 20):
         if first > TwitchAPIHelix.MAX_IDS:
             raise ValueError(f'The value of the first must be less than or equal to {TwitchAPIHelix.MAX_IDS}')
 
@@ -310,12 +309,12 @@ class TwitchAPIHelix(BaseAPI):
             'first': str(first)
         }
 
-        response = self._helix_get('webhooks/subscriptions', params=params)
+        response = await self._helix_get('webhooks/subscriptions', params=params)
         return self._extract_helix_data(response)
 
-    def post_webhook(self, hub_callback: str, hub_mode: str, hub_topic: 'HubTopic', *,
-                     hub_lease_seconds: int = 864000,
-                     hub_secret: str = '') -> None:
+    async def post_webhook(self, hub_callback: str, hub_mode: str, hub_topic: 'HubTopic', *,
+                           hub_lease_seconds: int = 864000,
+                           hub_secret: str = '') -> None:
         if hub_mode not in TwitchAPIHelix.HUB_MODES:
             raise ValueError(f'Invalid hub.mode. Valid values: {TwitchAPIHelix.HUB_MODES}')
 
@@ -327,26 +326,31 @@ class TwitchAPIHelix(BaseAPI):
             'hub.secret':        hub_secret,
         }
 
-        self._helix_post('webhooks/hub', params=params)
+        await self._helix_post('webhooks/hub', params=params)
 
-    def _request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
+    async def _request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
         if not self._ratelimit_remaining and self._ratelimit_reset > time():
             raise RateLimitOverflow(f'Wait {self._ratelimit_reset} until the limit is reset')
 
-        return super()._request(method, url, params=params)
+        response = await super()._request(method, url, params=params)
+        await self._handle_response(response)
+        return response
 
-    def _handle_response(self, response: ResponseT) -> None:
+    async def _handle_response(self, response: ResponseT) -> None:
         ratelimit_remaining = response.headers.get('Ratelimit-Remaining', None)
         ratelimit_reset = response.headers.get('Ratelimit-Reset', None)
         if ratelimit_remaining and ratelimit_reset:
             self._ratelimit_remaining = int(ratelimit_remaining)
             self._ratelimit_reset = int(ratelimit_reset)
 
-    def _helix_get(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
-        return self._request('get', urljoin(TwitchAPIHelix.DOMAIN, path), params=params).json()
+    async def _helix_get(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
+        response = await self._request('get', urljoin(TwitchAPIHelix.DOMAIN, path), params=params)
+        print(response.status)
+        return await response.json()
 
-    def _helix_post(self, path: str, *, params: Optional[URLParameterT] = None) -> str:
-        return self._request('post', urljoin(TwitchAPIHelix.DOMAIN, path), params=params).text
+    async def _helix_post(self, path: str, *, params: Optional[URLParameterT] = None) -> str:
+        response = await self._request('post', urljoin(TwitchAPIHelix.DOMAIN, path), params=params)
+        return await response.text()
 
     @staticmethod
     def _extract_helix_data(response: JSONT) -> HelixDataT:

@@ -1,25 +1,19 @@
 [[source]]
-
 url = "https://pypi.python.org/simple"
 verify_ssl = true
 name = "pypi"
 
-
 [packages]
-
 mypy-extensions = "*"
-pydantic = ">=0.7.1"
 "iso8601" = ">=0.1.12"
 "m3u8" = ">=0.3.5"
-strictyaml = ">=0.11.7"
-requests = ">=2.18.4"
-
+PyYAML = "*"
+configargparse = "*"
+aiohttp = "*"
 
 [dev-packages]
-
+"flake8" = "*"
+"flake8-bugbear" = "*"
+"flake8-commas" = "*"
+"flake8-quotes" = "*"
 mypy = "*"
-flake8 = "*"
-flake8-bugbear = "*"
-flake8-commas = "*"
-flake8-quotes = "*"
-vulture = "*"
