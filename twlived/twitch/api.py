@@ -38,6 +38,11 @@ class TwitchAPI(TwitchAPIAdapter):
             raise TwitchAPIError(f'Unknown TwitchAPI version: {version}. Possible values {TwitchAPI.VERSIONS}')
         self._version = version
 
+    def get_api(self, version: str) -> BaseAPI:
+        if version not in TwitchAPI.VERSIONS:
+            raise TwitchAPIError(f'Unknown TwitchAPI version: {version}. Possible values {TwitchAPI.VERSIONS}')
+        return self._api_adapters[version].api
+
     async def get_stream(self, channel: str, *, stream_type: str = 'live') -> Optional[StreamInfo]:
         return await self._api.get_stream(channel, stream_type=stream_type)
 

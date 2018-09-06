@@ -312,7 +312,7 @@ class TwitchAPIHelix(BaseAPI):
         response = await self._helix_get('webhooks/subscriptions', params=params)
         return self._extract_helix_data(response)
 
-    async def post_webhook(self, hub_callback: str, hub_mode: str, hub_topic: 'HubTopic', *,
+    async def post_webhook(self, hub_callback: str, hub_mode: str, hub_topic: str, *,
                            hub_lease_seconds: int = 864000,
                            hub_secret: str = '') -> None:
         if hub_mode not in TwitchAPIHelix.HUB_MODES:
