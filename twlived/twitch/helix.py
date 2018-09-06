@@ -1,12 +1,15 @@
 from functools import wraps
 from itertools import chain
 from time import time
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, NamedTuple, Optional, Union
 from urllib.parse import urljoin
 
 from .base import BaseAPI, JSONT, ResponseT, TwitchAPIError, URLParameterT
 
-HelixDataT = Tuple[List[JSONT], Optional[str]]
+
+class HelixData(NamedTuple):
+    data: List[JSONT]
+    cursor: Optional[str]
 
 
 def require_app_token(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -50,7 +53,7 @@ class TwitchAPIHelix(BaseAPI):
                           game_id: Optional[List[str]] = None,
                           language: Optional[List[str]] = None,
                           user_id: Optional[List[str]] = None,
-                          user_login: Optional[List[str]] = None) -> HelixDataT:
+                          user_login: Optional[List[str]] = None) -> HelixData:
         limited_size_args = {
             'community_id': len(community_id) if community_id is not None else 0,
             'game_id':      len(game_id) if game_id is not None else 0,
@@ -64,8 +67,6 @@ class TwitchAPIHelix(BaseAPI):
                 raise ValueError(f'You can specify up to {TwitchAPIHelix.MAX_IDS} IDs for {arg}')
         if first > TwitchAPIHelix.MAX_IDS:
             raise ValueError(f'The value of the first must be less than or equal to 100')
-        if type not in TwitchAPIHelix.STREAM_TYPES:
-            raise ValueError(f'Invalid value for stream type. Valid values: {TwitchAPIHelix.STREAM_TYPES}')
         if after and before:
             raise ValueError('Provide only one pagination direction.')
 
@@ -94,7 +95,7 @@ class TwitchAPIHelix(BaseAPI):
                          language: Optional[str] = None,
                          period: str = 'all',
                          sort: str = 'time',
-                         type: str = 'all') -> HelixDataT:
+                         type: str = 'all') -> HelixData:
         num_args = sum(map(lambda x: int(x is not None), [id, user_id, game_id]))
         if num_args == 0:
             raise ValueError('Must provide one of the arguments: list of id, user_id, game_id')
@@ -168,7 +169,7 @@ class TwitchAPIHelix(BaseAPI):
                         id: Optional[List[str]] = None,
                         after: Optional[str] = None,
                         before: Optional[str] = None,
-                        first: int = 20) -> HelixDataT:
+                        first: int = 20) -> HelixData:
         num_args = sum(map(lambda x: int(x is not None), [broadcaster_id, game_id, id]))
         if num_args == 0:
             raise ValueError('Must provide one of the arguments: list of id, broadcaster_id, game_id')
@@ -211,13 +212,12 @@ class TwitchAPIHelix(BaseAPI):
         }
 
         response = await self._helix_get('games', params=params)
-        data, _ = self._extract_helix_data(response)
-        return data
+        return response['data']
 
     async def get_top_games(self, *,
                             after: Optional[str] = None,
                             before: Optional[str] = None,
-                            first: int = 20) -> HelixDataT:
+                            first: int = 20) -> HelixData:
         if after and before:
             raise ValueError('Provide only one pagination direction.')
         if first > TwitchAPIHelix.MAX_IDS:
@@ -240,7 +240,7 @@ class TwitchAPIHelix(BaseAPI):
                                    game_id: Optional[List[str]] = None,
                                    language: Optional[List[str]] = None,
                                    user_id: Optional[List[str]] = None,
-                                   user_login: Optional[List[str]] = None) -> HelixDataT:
+                                   user_login: Optional[List[str]] = None) -> HelixData:
         limited_size_args = {
             'community_id': len(community_id) if community_id is not None else 0,
             'game_id':      len(game_id) if game_id is not None else 0,
@@ -337,15 +337,14 @@ class TwitchAPIHelix(BaseAPI):
         return response
 
     async def _handle_response(self, response: ResponseT) -> None:
-        ratelimit_remaining = response.headers.get('Ratelimit-Remaining', None)
-        ratelimit_reset = response.headers.get('Ratelimit-Reset', None)
+        ratelimit_remaining = response.headers.get('Ratelimit-Remaining', None) or 30
+        ratelimit_reset = response.headers.get('Ratelimit-Reset', None) or time()
         if ratelimit_remaining and ratelimit_reset:
             self._ratelimit_remaining = int(ratelimit_remaining)
             self._ratelimit_reset = int(ratelimit_reset)
 
     async def _helix_get(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
         response = await self._request('get', urljoin(TwitchAPIHelix.DOMAIN, path), params=params)
-        print(response.status)
         return await response.json()
 
     async def _helix_post(self, path: str, *, params: Optional[URLParameterT] = None) -> str:
@@ -353,8 +352,8 @@ class TwitchAPIHelix(BaseAPI):
         return await response.text()
 
     @staticmethod
-    def _extract_helix_data(response: JSONT) -> HelixDataT:
-        return response['data'], response['pagination']['cursor'] if response['pagination'] else None
+    def _extract_helix_data(response: JSONT) -> HelixData:
+        return HelixData(response['data'], response['pagination']['cursor'] if response['pagination'] else None)
 
 
 class HubTopic(str):

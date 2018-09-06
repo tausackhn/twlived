@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Type
 
 from .adapters import TwitchAPIAdapter, TwitchAPIHelixAdapter, TwitchAPIv5Adapter
 from .base import BaseAPI, JSONT, TwitchAPIError
+from .data import StreamInfo
 from .hidden import TwitchAPIHidden
 
 
@@ -37,7 +38,7 @@ class TwitchAPI(TwitchAPIAdapter):
             raise TwitchAPIError(f'Unknown TwitchAPI version: {version}. Possible values {TwitchAPI.VERSIONS}')
         self._version = version
 
-    async def get_stream(self, channel: str, *, stream_type: str = 'live') -> Optional[JSONT]:
+    async def get_stream(self, channel: str, *, stream_type: str = 'live') -> Optional[StreamInfo]:
         return await self._api.get_stream(channel, stream_type=stream_type)
 
     async def get_videos(self, channel: str, video_type: str = 'archive') -> List[JSONT]:
@@ -56,6 +57,6 @@ class TwitchAPI(TwitchAPIAdapter):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        for adapter in self._api_adapters:
+        for adapter in self._api_adapters.values():
             await adapter.close()
         await self._hidden_api.close()
