@@ -70,16 +70,16 @@ class TwitchAPIHelix(BaseAPI):
         if after and before:
             raise ValueError('Provide only one pagination direction.')
 
-        params = {
-            'after':        after,
-            'before':       before,
-            'community_id': community_id,
-            'first':        str(first),
-            'game_id':      game_id,
-            'language':     language,
-            'user_id':      user_id,
-            'user_login':   user_login,
-        }
+        params = [
+            ('after', after),
+            ('before', before),
+            ('first', str(first)),
+            ('language', language),
+        ]
+        params += [('community_id', community_id_) for community_id_ in community_id or []]
+        params += [('user_id', user_id_) for user_id_ in user_id or []]
+        params += [('user_login', user_login_) for user_login_ in user_login or []]
+        params += [('game_id', game_id_) for game_id_ in game_id or []]
 
         response = await self._helix_get('streams', params=params)
         return self._extract_helix_data(response)
@@ -114,18 +114,18 @@ class TwitchAPIHelix(BaseAPI):
         if type not in TwitchAPIHelix.VIDEO_TYPES:
             raise ValueError(f'Invalid value for type of video. Valid values: {TwitchAPIHelix.VIDEO_TYPES}')
 
-        params = {
-            'id':       id,
-            'user_id':  user_id,
-            'game_id':  game_id,
-            'after':    after,
-            'before':   before,
-            'first':    str(first),
-            'language': language,
-            'period':   period,
-            'sort':     sort,
-            'type':     type,
-        }
+        params = [
+            ('user_id', user_id),
+            ('game_id', game_id),
+            ('after', after),
+            ('before', before),
+            ('first', str(first)),
+            ('language', language),
+            ('period', period),
+            ('sort', sort),
+            ('type', type),
+        ]
+        params += [('id', id_) for id_ in id or []]
 
         response = await self._helix_get('videos', params=params)
         return self._extract_helix_data(response)
@@ -182,14 +182,14 @@ class TwitchAPIHelix(BaseAPI):
         if first > TwitchAPIHelix.MAX_IDS:
             raise ValueError(f'The value of the first must be less than or equal to {TwitchAPIHelix.MAX_IDS}')
 
-        params = {
-            'broadcaster_id': broadcaster_id,
-            'game_id':        game_id,
-            'id':             id,
-            'after':          after,
-            'before':         before,
-            'first':          str(first)
-        }
+        params = [
+            ('broadcaster_id', broadcaster_id),
+            ('game_id', game_id),
+            ('after', after),
+            ('before', before),
+            ('first', str(first))
+        ]
+        params += [('id', id_) for id_ in id or []]
 
         response = await self._helix_get('clips', params=params)
         return self._extract_helix_data(response)
@@ -197,7 +197,7 @@ class TwitchAPIHelix(BaseAPI):
     # noinspection PyShadowingBuiltins
     async def get_games(self, *,
                         id: Optional[List[str]] = None,
-                        name: Optional[str] = None) -> List[JSONT]:
+                        name: Optional[List[str]] = None) -> List[JSONT]:
         num_args = sum(map(lambda x: int(x is not None), [id, name]))
         if num_args == 0:
             raise ValueError('Must provide one of the arguments: list of id, name')
@@ -206,10 +206,7 @@ class TwitchAPIHelix(BaseAPI):
         if id and len(id) > TwitchAPIHelix.MAX_IDS:
             raise ValueError(f'You can specify up to {TwitchAPIHelix.MAX_IDS} IDs')
 
-        params = {
-            'id':   id,
-            'name': name
-        }
+        params = [('id', id_) for id_ in id or []] + [('name', name_) for name_ in name or []]
 
         response = await self._helix_get('games', params=params)
         return response['data']
@@ -259,17 +256,16 @@ class TwitchAPIHelix(BaseAPI):
         if after and before:
             raise ValueError('Provide only one pagination direction.')
 
-        params = {
-            'after':        after,
-            'before':       before,
-            'community_id': community_id,
-            'first':        str(first),
-            'game_id':      game_id,
-            'language':     language,
-            'user_id':      user_id,
-            'user_login':   user_login,
-        }
-
+        params = [
+            ('after', after),
+            ('before', before),
+            ('first', str(first)),
+            ('language', language),
+        ]
+        params += [('community_id', community_id_) for community_id_ in community_id or []]
+        params += [('user_id', user_id_) for user_id_ in user_id or []]
+        params += [('user_login', user_login_) for user_login_ in user_login or []]
+        params += [('game_id', game_id_) for game_id_ in game_id or []]
         # TODO: Handle global rate limit
         # Headers:
         # Ratelimit-Helixstreamsmetadata-Limit: <int value>

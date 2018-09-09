@@ -1,4 +1,4 @@
-from typing import Any, Collection, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Collection, Dict, List, Mapping, Optional, Tuple, Union, overload
 
 import aiohttp
 
@@ -26,12 +26,10 @@ class BaseAPI:
 
     async def _raw_request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
         # Remove parameters which can not be converted uniquely to string
-        filtered_params = params
-        if isinstance(params, dict):
-            filtered_params = filter_none_and_empty(params)
-            if filtered_params:
-                filtered_params = {name: ','.join(value) if isinstance(value, list) else value
-                                   for name, value in filtered_params.items()}
+        filtered_params = filter_none_and_empty(params)
+        if isinstance(filtered_params, dict):
+            filtered_params = {name: ','.join(value) if isinstance(value, list) else value
+                               for name, value in filtered_params.items()}
 
         return await self._session.request(method, url, params=filtered_params, headers=self._headers)
 
@@ -46,8 +44,20 @@ class BaseAPI:
             await self._session.close()
 
 
-def filter_none_and_empty(dictionary: Dict[Any, Any]) -> Dict[Any, Any]:
-    return {key: value for key, value in dictionary.items() if value}
+@overload
+def filter_none_and_empty(d: List[Tuple[Any, Any]]) -> List[Tuple[Any, Any]]: ...
+
+
+@overload
+def filter_none_and_empty(d: Dict[Any, Any]) -> Dict[Any, Any]: ...
+
+
+def filter_none_and_empty(d: Union[List[Tuple[Any, Any]], Dict[Any, Any]]) \
+        -> Union[List[Tuple[Any, Any]], Dict[Any, Any]]:
+    if isinstance(d, dict):
+        return {key: value for key, value in d.items() if value}
+    elif isinstance(d, list):
+        return [(key, value) for key, value in d if value]
 
 
 def bool_to_str(value: bool) -> str:
