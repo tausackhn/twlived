@@ -11,6 +11,10 @@ class HelixData(NamedTuple):
     data: List[JSONT]
     cursor: Optional[str]
 
+    @classmethod
+    def from_json(cls, data: JSONT):
+        return cls(data['data'], data['pagination']['cursor'] if data['pagination'] else None)
+
 
 def require_app_token(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
@@ -82,7 +86,7 @@ class TwitchAPIHelix(BaseAPI):
         params += [('game_id', game_id_) for game_id_ in game_id or []]
 
         response = await self._helix_get('streams', params=params)
-        return self._extract_helix_data(response)
+        return HelixData.from_json(response)
 
     # noinspection PyShadowingBuiltins
     async def get_videos(self, *,
@@ -128,7 +132,7 @@ class TwitchAPIHelix(BaseAPI):
         params += [('id', id_) for id_ in id or []]
 
         response = await self._helix_get('videos', params=params)
-        return self._extract_helix_data(response)
+        return HelixData.from_json(response)
 
     # noinspection PyShadowingBuiltins
     async def get_users(self, *,
@@ -192,7 +196,7 @@ class TwitchAPIHelix(BaseAPI):
         params += [('id', id_) for id_ in id or []]
 
         response = await self._helix_get('clips', params=params)
-        return self._extract_helix_data(response)
+        return HelixData.from_json(response)
 
     # noinspection PyShadowingBuiltins
     async def get_games(self, *,
@@ -227,7 +231,7 @@ class TwitchAPIHelix(BaseAPI):
         }
 
         response = await self._helix_get('games/top', params=params)
-        return self._extract_helix_data(response)
+        return HelixData.from_json(response)
 
     async def get_streams_metadata(self, *,
                                    after: Optional[str] = None,
@@ -271,7 +275,7 @@ class TwitchAPIHelix(BaseAPI):
         # Ratelimit-Helixstreamsmetadata-Limit: <int value>
         # Ratelimit-Helixstreamsmetadata-Remaining: <int value>
         response = await self._helix_get('streams/metadata', params=params)
-        return self._extract_helix_data(response)
+        return HelixData.from_json(response)
 
     async def get_users_follows(self, *,
                                 after: Optional[str] = None,
@@ -291,7 +295,7 @@ class TwitchAPIHelix(BaseAPI):
         }
 
         response = await self._helix_get('users/follows', params=params)
-        return self._extract_helix_data(response)
+        return HelixData.from_json(response)
 
     @require_app_token
     async def get_webhook_subscriptions(self, *,
@@ -306,7 +310,7 @@ class TwitchAPIHelix(BaseAPI):
         }
 
         response = await self._helix_get('webhooks/subscriptions', params=params)
-        return self._extract_helix_data(response)
+        return HelixData.from_json(response)
 
     async def post_webhook(self, hub_callback: str, hub_mode: str, hub_topic: str, *,
                            hub_lease_seconds: int = 864000,
@@ -346,10 +350,6 @@ class TwitchAPIHelix(BaseAPI):
     async def _helix_post(self, path: str, *, params: Optional[URLParameterT] = None) -> str:
         response = await self._request('post', urljoin(TwitchAPIHelix.DOMAIN, path), params=params)
         return await response.text()
-
-    @staticmethod
-    def _extract_helix_data(response: JSONT) -> HelixData:
-        return HelixData(response['data'], response['pagination']['cursor'] if response['pagination'] else None)
 
 
 class HubTopic(str):
