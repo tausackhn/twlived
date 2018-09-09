@@ -1,36 +1,43 @@
+import asyncio
 import functools
 import operator
 from collections import deque
 from itertools import repeat
-from time import sleep
-from typing import Any, Callable, Generator, Iterator, List, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Awaitable, Callable, Generator, Iterator, List, Optional, Type, TypeVar
 
-FT = Callable[..., Any]
+CoroT = Callable[..., Awaitable[Any]]
 T = TypeVar('T')
 
 
-def retry_on_exception(exceptions: Union[Type[Exception], Sequence[Type[Exception]]],
+def retry_on_exception(*exceptions: Type[Exception],
                        wait: float = 2,
-                       max_tries: int = Optional[None]) -> Callable[[FT], FT]:
-    def decorator(f: FT) -> FT:
+                       max_tries: int = Optional[None]) -> Callable[[CoroT], CoroT]:
+    def decorator(f: CoroT) -> CoroT:
         @functools.wraps(f)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             tries = 0
             while True:
                 tries += 1
                 try:
-                    # noinspection PyCallingNonCallable
-                    result = f(*args, **kwargs)
+                    result = await f(*args, **kwargs)
                 except tuple(exceptions):
                     if tries == max_tries:
                         raise
-                    sleep(wait)
+                    await asyncio.sleep(wait)
                 else:
                     return result
 
         return wrapper
 
     return decorator
+
+
+def all_subclasses(klass: Type[T]) -> Iterator[Type[T]]:
+    subclasses = klass.__subclasses__()
+    for subclass in subclasses:
+        yield subclass
+    for subclass in subclasses:
+        yield from all_subclasses(subclass)
 
 
 def chunked(l: List[T], chunk_size: int) -> Iterator[List[T]]:
