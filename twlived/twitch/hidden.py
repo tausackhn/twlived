@@ -68,7 +68,7 @@ class TwitchAPIHidden(BaseAPI):
                                      params={
                                          'token':        token['token'],
                                          'sig':          token['sig'],
-                                         'allow_source': 'true'
+                                         'allow_source': 'true',
                                      })
 
     @no_headers

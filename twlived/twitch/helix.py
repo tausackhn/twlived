@@ -216,7 +216,7 @@ class TwitchAPIHelix(BaseAPI):
             ('game_id', game_id),
             ('after', after),
             ('before', before),
-            ('first', str(first))
+            ('first', str(first)),
         ]
         params += [('id', id_) for id_ in id or []]
 
@@ -252,7 +252,7 @@ class TwitchAPIHelix(BaseAPI):
         params = {
             'after':  after,
             'before': before,
-            'first':  str(first)
+            'first':  str(first),
         }
 
         response = await self._helix_get('games/top', params=params)
@@ -314,7 +314,7 @@ class TwitchAPIHelix(BaseAPI):
             'after':   after,
             'first':   str(first),
             'from_id': from_id,
-            'to_id':   to_id
+            'to_id':   to_id,
         }
 
         response = await self._helix_get('users/follows', params=params)
@@ -329,7 +329,7 @@ class TwitchAPIHelix(BaseAPI):
 
         params = {
             'after': after,
-            'first': str(first)
+            'first': str(first),
         }
 
         response = await self._helix_get('webhooks/subscriptions', params=params)
@@ -356,7 +356,7 @@ class TwitchAPIHelix(BaseAPI):
         params = {
             'client_id':     self.client_id,
             'client_secret': self.client_secret,
-            'grant_type':    'client_credentials'
+            'grant_type':    'client_credentials',
         }
         response = await (await super()._request('post', TwitchAPIHelix.APP_TOKEN_URL, params=params)).json()
         self._app_access_token = AccessToken(access_token=response['access_token'],

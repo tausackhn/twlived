@@ -21,7 +21,7 @@ class TwitchAPIv5(BaseAPI):
         super().__init__(retry=retry)
         self._headers.update({
             'Client-ID': client_id,
-            'Accept':    'application/vnd.twitchtv.v5+json'
+            'Accept':    'application/vnd.twitchtv.v5+json',
         })
 
     async def get_cheermotes(self, *, channel_id: str = None) -> JSONT:
@@ -44,7 +44,7 @@ class TwitchAPIv5(BaseAPI):
             'limit':     str(limit),
             'offset':    str(offset),
             'cursor':    cursor,
-            'direction': direction
+            'direction': direction,
         }
 
         return await self._kraken_get(f'channels/{channel_id}/follows', params=params)
@@ -70,7 +70,7 @@ class TwitchAPIv5(BaseAPI):
             'offset':         str(offset),
             'broadcast_type': broadcast_type,
             'language':       language,
-            'sort':           sort
+            'sort':           sort,
         }
 
         return await self._kraken_get(f'channels/{channel_id}/videos', params=params)
@@ -113,7 +113,7 @@ class TwitchAPIv5(BaseAPI):
             'language': language,
             'limit':    str(limit),
             'period':   period,
-            'trending': bool_to_str(trending)
+            'trending': bool_to_str(trending),
         }
 
         return await self._kraken_get('clips/top', params=params)
@@ -138,7 +138,7 @@ class TwitchAPIv5(BaseAPI):
         params = {
             'limit':           str(limit),
             'cursor':          cursor,
-            'containing_item': containing_item
+            'containing_item': containing_item,
         }
 
         return await self._kraken_get(f'channels/{channel_id}/collections', params=params)
@@ -158,7 +158,7 @@ class TwitchAPIv5(BaseAPI):
 
         params = {
             'limit':  str(limit),
-            'cursor': cursor
+            'cursor': cursor,
         }
 
         return await self._kraken_get('communities/top', params=params)
@@ -171,7 +171,7 @@ class TwitchAPIv5(BaseAPI):
 
         params = {
             'limit':  str(limit),
-            'offset': str(offset)
+            'offset': str(offset),
         }
 
         return await self._kraken_get('games/top', params=params)
@@ -188,7 +188,7 @@ class TwitchAPIv5(BaseAPI):
         params = {
             'query':  query,
             'limit':  str(limit),
-            'offset': str(offset)
+            'offset': str(offset),
         }
 
         return await self._kraken_get('search/channels', params=params)
@@ -196,7 +196,7 @@ class TwitchAPIv5(BaseAPI):
     async def search_games(self, query: str, *, live: bool = False) -> JSONT:
         params = {
             'query': query,
-            'live':  bool_to_str(live)
+            'live':  bool_to_str(live),
         }
 
         return await self._kraken_get('search/games', params=params)
@@ -212,7 +212,7 @@ class TwitchAPIv5(BaseAPI):
             'query':  query,
             'limit':  str(limit),
             'offset': str(offset),
-            'hls':    bool_to_str(hls) if hls is not None else hls
+            'hls':    bool_to_str(hls) if hls is not None else hls,
         }
 
         return await self._kraken_get('search/streams', params=params)
@@ -243,7 +243,7 @@ class TwitchAPIv5(BaseAPI):
             'language':    language,
             'stream_type': stream_type,
             'limit':       str(limit),
-            'offset':      str(offset)
+            'offset':      str(offset),
         }
 
         return await self._kraken_get('streams', params=params)
@@ -259,7 +259,7 @@ class TwitchAPIv5(BaseAPI):
 
         params = {
             'limit':  str(limit),
-            'offset': str(offset)
+            'offset': str(offset),
         }
 
         return await self._kraken_get('streams/featured', params=params)
@@ -270,7 +270,7 @@ class TwitchAPIv5(BaseAPI):
 
         params = {
             'limit':  str(limit),
-            'offset': str(offset)
+            'offset': str(offset),
         }
 
         return await self._kraken_get('teams', params=params)
@@ -293,7 +293,7 @@ class TwitchAPIv5(BaseAPI):
             missing_logins = list(filter(lambda x: x not in self._login_storage, login))
 
         params = filter_none_and_empty({
-            'login': missing_logins
+            'login': missing_logins,
         })
 
         if params:
@@ -321,7 +321,7 @@ class TwitchAPIv5(BaseAPI):
             'limit':     str(limit),
             'offset':    str(offset),
             'direction': direction,
-            'sortby':    sortby
+            'sortby':    sortby,
         }
 
         return await self._kraken_get(f'users/{user_id}/follows/channels', params=params)
@@ -358,7 +358,7 @@ class TwitchAPIv5(BaseAPI):
             'period':         period,
             'broadcast_type': broadcast_type,
             'language':       language,
-            'sort':           sort
+            'sort':           sort,
         }
 
         return await self._kraken_get('videos/top', params=params)
