@@ -4,7 +4,7 @@ from functools import wraps
 from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import urljoin
 
-from .base import BaseAPI, JSONT, URLParameterT
+from .base import BaseAPI, JSONT, ResponseT, URLParameterT
 
 
 def timed_cache(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -40,7 +40,7 @@ class TwitchAPIHidden(BaseAPI):
 
     def __init__(self, client_id: str) -> None:
         super().__init__()
-        self._headers.update({'Client-ID': client_id})
+        self.client_id = client_id
 
     @timed_cache
     async def get_video_token(self, video_id: str) -> JSONT:
@@ -70,6 +70,16 @@ class TwitchAPIHidden(BaseAPI):
                                          'sig':          token['sig'],
                                          'allow_source': 'true'
                                      })
+
+    @no_headers
+    async def get_channel_badges(self, channel_id: str):
+        # https://badges.twitch.tv/v1/badges/channels/<channel_id>/display
+        response = await self._request('get', f'https://badges.twitch.tv/v1/badges/channels/{channel_id}/display')
+        return await response.json()
+
+    async def _request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
+        self._headers.update({'Client-ID': self.client_id})
+        return await super()._request(method, url, params=params)
 
     async def _get_api(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
         response = await self._request('get', urljoin(TwitchAPIHidden.TOKEN_DOMAIN, path), params=params)

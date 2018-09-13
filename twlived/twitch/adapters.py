@@ -1,15 +1,16 @@
 from abc import ABCMeta, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Union, cast
 
 from .base import BaseAPI, JSONT, TwitchAPIError
 from .data import StreamInfo
-from .helix import TwitchAPIHelix
+from .helix import HelixData, TwitchAPIHelix
 from .v5 import TwitchAPIv5
 
 
 class TwitchAPIAdapter(metaclass=ABCMeta):
-    def __init__(self, client_id: str, *, retry: bool = False) -> None:
+    def __init__(self, client_id: str, *, client_secret: Optional[str] = None, retry: bool = False) -> None:
         self.client_id = client_id
+        self.client_secret = client_secret
 
     @property
     @abstractmethod
@@ -36,6 +37,13 @@ class TwitchAPIAdapter(metaclass=ABCMeta):
         :param video_id: number with or without `v`
         """
 
+    @abstractmethod
+    async def get_streams(self, channels: List[str], *, stream_type: str = 'live') -> List[StreamInfo]:
+        """returns streams by list of channel names
+        :param channels: list of channel names
+        :param stream_type: possible values {'live', 'playlist', 'premiere', 'rerun'}
+        """
+
     async def __aenter__(self):
         return self
 
@@ -48,8 +56,8 @@ class TwitchAPIAdapter(metaclass=ABCMeta):
 
 
 class TwitchAPIv5Adapter(TwitchAPIAdapter):
-    def __init__(self, client_id: str, *, retry: bool = False) -> None:
-        super().__init__(client_id, retry=retry)
+    def __init__(self, client_id: str, *, client_secret: Optional[str] = None, retry: bool = False) -> None:
+        super().__init__(client_id, client_secret=client_secret, retry=retry)
         self._api = TwitchAPIv5(client_id, retry=retry)
 
     @property
@@ -58,8 +66,8 @@ class TwitchAPIv5Adapter(TwitchAPIAdapter):
 
     async def get_stream(self, channel: str, *, stream_type: str = 'live') -> Optional[StreamInfo]:
         user_id = await self._get_user_id(channel)
-        data = await self._api.get_stream(user_id, stream_type=stream_type)
-        if not data['stream']:
+        data = (await self._api.get_stream(user_id, stream_type=stream_type))['stream']
+        if not data:
             return None
         return StreamInfo(channel_name=data['channel']['name'],
                           channel_id=data['channel']['_id'],
@@ -71,11 +79,23 @@ class TwitchAPIv5Adapter(TwitchAPIAdapter):
         if video_type == 'all':
             video_type = ''
         user_id = await self._get_user_id(channel)
-        data = await self._api.get_channel_videos(user_id, limit=100, broadcast_type=video_type)
+        data = await self._api.get_channel_videos(user_id, limit=100, broadcast_type=[video_type])
         return data['videos']
 
     async def get_video(self, video_id: str) -> JSONT:
         return await self._api.get_video(video_id.lstrip('v'))
+
+    async def get_streams(self, channels: List[str], *, stream_type: str = 'live') -> List[StreamInfo]:
+        user_ids = list(map(lambda u: u['_id'], await self._api.get_users(channels)))
+        data_list = (await self._api.get_live_streams(channel=user_ids))['streams']
+        if not data_list:
+            return []
+        return [StreamInfo(channel_name=data['channel']['name'],
+                           channel_id=data['channel']['_id'],
+                           game=data['game'],
+                           status=data['channel']['status'],
+                           data=data)
+                for data in data_list]
 
     async def _get_user_id(self, channel: str) -> str:
         try:
@@ -86,9 +106,9 @@ class TwitchAPIv5Adapter(TwitchAPIAdapter):
 
 
 class TwitchAPIHelixAdapter(TwitchAPIAdapter):
-    def __init__(self, client_id: str, *, retry: bool = False) -> None:
-        super().__init__(client_id, retry=retry)
-        self._api = TwitchAPIHelix(client_id, retry=retry)
+    def __init__(self, client_id: str, *, client_secret: Optional[str] = None, retry: bool = False) -> None:
+        super().__init__(client_id, client_secret=client_secret, retry=retry)
+        self._api = TwitchAPIHelix(client_id, client_secret=client_secret, retry=retry)
 
     @property
     def api(self) -> BaseAPI:
@@ -97,17 +117,10 @@ class TwitchAPIHelixAdapter(TwitchAPIAdapter):
     async def get_stream(self, channel: str, *, stream_type: str = 'live') -> Optional[StreamInfo]:
         user_id = await self._get_user_id(channel)
         stream_data = await self._api.get_streams(user_id=[user_id])
-        if stream_data.data[0]['type'] != stream_type:
+        if not stream_data.data or stream_data.data[0]['type'] != stream_type:
             return None
 
-        user_data = await self._api.get_users(id=[user_id])
-        game_data = await self._api.get_games(id=[stream_data.data[0]['game_id']])
-
-        return StreamInfo(channel_name=user_data[0]['login'],
-                          channel_id=user_id,
-                          game=game_data[0]['name'],
-                          status=stream_data.data[0]['title'],
-                          data=stream_data.data[0])
+        return cast(StreamInfo, await prepare_stream_info(self._api, stream_data))
 
     async def get_videos(self, channel: str, video_type: str = 'archive') -> List[JSONT]:
         user_id = await self._get_user_id(channel)
@@ -118,9 +131,37 @@ class TwitchAPIHelixAdapter(TwitchAPIAdapter):
         data = await self._api.get_videos(id=[video_id])
         return data[0][0]
 
+    async def get_streams(self, channels: List[str], *, stream_type: str = 'live') -> List[StreamInfo]:
+        streams_data = await self._api.get_streams(user_login=channels, first=TwitchAPIHelix.MAX_IDS)
+        prepared_info = await prepare_stream_info(self._api, streams_data)
+        if not isinstance(prepared_info, list):
+            prepared_info = [prepared_info]
+        return list(filter(lambda s: s.data['type'] == stream_type, prepared_info))
+
     async def _get_user_id(self, channel: str) -> str:
         try:
             data = await self._api.get_users(login=[channel])
             return data[0]['id']
         except IndexError as exc:
             raise TwitchAPIError(f'Channel {channel} did not found on twitch.tv') from exc
+
+
+async def prepare_stream_info(helix_api: TwitchAPIHelix, stream_data: HelixData) -> Union[StreamInfo, List[StreamInfo]]:
+    user_ids = list(map(lambda u: u['user_id'], stream_data.data))
+    game_ids = map(lambda g: g['game_id'], stream_data.data)
+    if not user_ids:
+        return []
+
+    user_data = await helix_api.get_users(id=user_ids)
+    game_data = await helix_api.get_games(id=list(game_ids))
+
+    games = {game['id']: game['name'] for game in game_data}
+    users = {user['id']: user['login'] for user in user_data}
+
+    stream_infos = [StreamInfo(channel_name=users[stream['user_id']],
+                               channel_id=stream['user_id'],
+                               game=games[stream['game_id']],
+                               status=stream['title'],
+                               data=stream)
+                    for stream in stream_data.data]
+    return stream_infos if len(stream_infos) > 1 else stream_infos[0]

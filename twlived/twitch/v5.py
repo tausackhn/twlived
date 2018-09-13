@@ -1,4 +1,4 @@
-from typing import Collection, List, Optional
+from typing import List, Optional
 from urllib.parse import urljoin
 
 from .base import BaseAPI, JSONT, URLParameterT, bool_to_str, filter_none_and_empty
@@ -9,6 +9,7 @@ class TwitchAPIv5(BaseAPI):
 
     DOMAIN: str = 'https://api.twitch.tv/kraken/'
     MAX_LIMIT: int = 100
+    MAX_OFFSET: int = 500
     DIRECTIONS = {'asc', 'desc'}
     BROADCAST_TYPES = {'archive', 'highlight', 'upload'}
     VIDEOS_SORT = {'time', 'views'}
@@ -54,7 +55,7 @@ class TwitchAPIv5(BaseAPI):
     async def get_channel_videos(self, channel_id: str, *,
                                  limit: int = 10,
                                  offset: int = 0,
-                                 broadcast_type: Optional[Collection[str]] = None,
+                                 broadcast_type: Optional[List[str]] = None,
                                  language: Optional[str] = None,
                                  sort: str = 'time') -> JSONT:
         if limit > TwitchAPIv5.MAX_LIMIT:
@@ -323,7 +324,7 @@ class TwitchAPIv5(BaseAPI):
             'sortby':    sortby
         }
 
-        return await self._kraken_get(f'user/{user_id}/follows/channels', params=params)
+        return await self._kraken_get(f'users/{user_id}/follows/channels', params=params)
 
     async def get_user_follows_by_channel(self, user_id: str, channel_id: str) -> JSONT:
         return await self._kraken_get(f'users/{user_id}/follows/channels/{channel_id}')
@@ -336,11 +337,13 @@ class TwitchAPIv5(BaseAPI):
                              offset: int = 0,
                              game: Optional[str] = None,
                              period: Optional[str] = 'week',
-                             broadcast_type: Optional[Collection[str]] = None,
+                             broadcast_type: Optional[List[str]] = None,
                              language: str = '',
                              sort: str = 'time') -> JSONT:
         if limit > TwitchAPIv5.MAX_LIMIT:
             raise ValueError(f'You can specify limit up to {TwitchAPIv5.MAX_LIMIT}')
+        if offset > TwitchAPIv5.MAX_OFFSET:
+            raise ValueError(f'You can specify offset up to {TwitchAPIv5.MAX_OFFSET}')
         if period not in TwitchAPIv5.PERIODS:
             raise ValueError(f'Invalid period. Valid values: {TwitchAPIv5.PERIODS}')
         if broadcast_type and set(broadcast_type) - TwitchAPIv5.BROADCAST_TYPES:

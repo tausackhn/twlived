@@ -1,8 +1,10 @@
 from functools import wraps
 from itertools import chain
 from time import time
-from typing import Any, Callable, List, NamedTuple, Optional, Union
+from typing import Any, Callable, List, NamedTuple, Optional, Tuple, Union
 from urllib.parse import urljoin
+
+import aiohttp
 
 from .base import BaseAPI, JSONT, ResponseT, TwitchAPIError, URLParameterT
 
@@ -13,7 +15,16 @@ class HelixData(NamedTuple):
 
     @classmethod
     def from_json(cls, data: JSONT):
-        return cls(data['data'], data['pagination']['cursor'] if data['pagination'] else None)
+        if 'pagination' in data:
+            cursor = data['pagination']['cursor'] if data['pagination'] else None
+        else:
+            cursor = None
+        return cls(data['data'], cursor)
+
+
+class AccessToken(NamedTuple):
+    access_token: str
+    expires: Union[float, int]
 
 
 def require_app_token(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -31,6 +42,7 @@ class TwitchAPIHelix(BaseAPI):
     """Class implementing part of Twitch API Helix."""
 
     DOMAIN: str = 'https://api.twitch.tv/helix/'
+    APP_TOKEN_URL: str = 'https://id.twitch.tv/oauth2/token'
     MAX_IDS: int = 100
     STREAM_TYPES = {'all', 'live', 'vodcast'}
     PERIODS = {'all', 'day', 'month', 'week'}
@@ -40,13 +52,26 @@ class TwitchAPIHelix(BaseAPI):
 
     def __init__(self, client_id: str, *, client_secret: Optional[str] = None, retry: bool = False) -> None:
         super().__init__(retry=retry)
-        self._headers.update({'Client-ID': client_id})
 
         self.client_secret = client_secret
+        self.client_id = client_id
+        self._app_access_token: Optional[AccessToken] = None
 
-        # Without Bearer Token
-        self._ratelimit_remaining = 30
+        if not self.client_secret:
+            # Without Bearer Token
+            self._ratelimit_remaining = 30
+        else:
+            # Authorization header will be set
+            self._ratelimit_remaining = 120
         self._ratelimit_reset: Union[int, float] = time()
+
+    @property
+    async def access_token(self):
+        if not self.client_secret:
+            raise TwitchAPIError('Requires client_secret')
+        if (self.client_secret and not self._app_access_token) or self._app_access_token.expires > time():
+            await self.authorize()
+        return self._app_access_token.access_token
 
     # noinspection PyShadowingBuiltins
     async def get_streams(self, *,
@@ -74,16 +99,16 @@ class TwitchAPIHelix(BaseAPI):
         if after and before:
             raise ValueError('Provide only one pagination direction.')
 
-        params = [
+        params: List[Tuple[str, Optional[str]]] = [
             ('after', after),
             ('before', before),
             ('first', str(first)),
-            ('language', language),
         ]
         params += [('community_id', community_id_) for community_id_ in community_id or []]
         params += [('user_id', user_id_) for user_id_ in user_id or []]
         params += [('user_login', user_login_) for user_login_ in user_login or []]
         params += [('game_id', game_id_) for game_id_ in game_id or []]
+        params += [('language', language_) for language_ in language or []]
 
         response = await self._helix_get('streams', params=params)
         return HelixData.from_json(response)
@@ -255,8 +280,6 @@ class TwitchAPIHelix(BaseAPI):
                 raise ValueError(f'You can specify up to {TwitchAPIHelix.MAX_IDS} IDs for {arg}')
         if first > TwitchAPIHelix.MAX_IDS:
             raise ValueError(f'The value of the first must be less than or equal to 100')
-        if type not in TwitchAPIHelix.STREAM_TYPES:
-            raise ValueError(f'Invalid value for stream type. Valid values: {TwitchAPIHelix.STREAM_TYPES}')
         if after and before:
             raise ValueError('Provide only one pagination direction.')
 
@@ -264,12 +287,12 @@ class TwitchAPIHelix(BaseAPI):
             ('after', after),
             ('before', before),
             ('first', str(first)),
-            ('language', language),
         ]
         params += [('community_id', community_id_) for community_id_ in community_id or []]
         params += [('user_id', user_id_) for user_id_ in user_id or []]
         params += [('user_login', user_login_) for user_login_ in user_login or []]
         params += [('game_id', game_id_) for game_id_ in game_id or []]
+        params += [('language', language_) for language_ in language or []]
         # TODO: Handle global rate limit
         # Headers:
         # Ratelimit-Helixstreamsmetadata-Limit: <int value>
@@ -328,16 +351,53 @@ class TwitchAPIHelix(BaseAPI):
 
         await self._helix_post('webhooks/hub', params=params)
 
+    @require_app_token
+    async def authorize(self):
+        params = {
+            'client_id':     self.client_id,
+            'client_secret': self.client_secret,
+            'grant_type':    'client_credentials'
+        }
+        response = await (await super()._request('post', TwitchAPIHelix.APP_TOKEN_URL, params=params)).json()
+        self._app_access_token = AccessToken(access_token=response['access_token'],
+                                             expires=time() + response['expires_in'] - 1)
+
     async def _request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
+        # Prefer authorized client due to higher rate limit
+        if self.client_secret:
+            # TODO: remove when typed-ast would support Python 3.7 (https://github.com/python/typed_ast/issues/60)
+            access_token = await self.access_token
+            self._headers.update({'Authorization': f'Bearer {access_token}'})
+        else:
+            self._headers.update({'Client-ID': self.client_id})
+
         if not self._ratelimit_remaining and self._ratelimit_reset > time():
             raise RateLimitOverflow(f'Wait {self._ratelimit_reset} until the limit is reset')
 
-        response = await super()._request(method, url, params=params)
-        await self._handle_response(response)
-        return response
+        tries = 0
+        # Auto-authorization flow. Trying to request first time and
+        # trying to authorize and request again if authorization revoked.
+        while tries < 2:
+            try:
+                tries += 1
+                response = await super()._request(method, url, params=params)
+            except aiohttp.ClientResponseError as e:
+                # Twitch revoked Bearer token.
+                if e.status == 401 and self.client_secret and tries < 2:
+                    # Trying to authorize once again.
+                    # Could raise exception if the client secret is invalid.
+                    await self.authorize()
+                else:
+                    raise
+            else:
+                await self._handle_response(response)
+                return response
+
+        raise Exception('Should never reach this point')
 
     async def _handle_response(self, response: ResponseT) -> None:
-        ratelimit_remaining = response.headers.get('Ratelimit-Remaining', None) or 30
+        ratelimit_remaining = 30 if not self.client_secret else 120
+        ratelimit_remaining = response.headers.get('Ratelimit-Remaining', None) or ratelimit_remaining
         ratelimit_reset = response.headers.get('Ratelimit-Reset', None) or time()
         if ratelimit_remaining and ratelimit_reset:
             self._ratelimit_remaining = int(ratelimit_remaining)
@@ -357,9 +417,9 @@ class HubTopic(str):
     def follows(cls, from_id: str = '', to_id: str = '') -> str:
         if not (from_id or to_id):
             raise ValueError('Specify at least one argument from_id or to_id')
-        params = ''
-        params += f'from_id={from_id}' if from_id else ''
-        params += f'from_id={to_id}' if to_id else ''
+        params = 'first=1'
+        params += f'&from_id={from_id}' if from_id else ''
+        params += f'&to_id={to_id}' if to_id else ''
         return cls(urljoin(TwitchAPIHelix.DOMAIN, f'users/follows?{params}'))
 
     @classmethod

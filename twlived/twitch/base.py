@@ -1,9 +1,9 @@
-from typing import Any, Collection, Dict, List, Mapping, Optional, Tuple, Union, overload
+from typing import Any, Collection, Dict, Mapping, Optional, Tuple, Union, overload
 
 import aiohttp
 
 JSONT = Dict[str, Any]
-URLParameterT = Union[List[Tuple[str, str]], Mapping[str, Optional[Union[str, Collection[str]]]]]
+URLParameterT = Union[Collection[Tuple[str, Optional[str]]], Mapping[str, Union[str, Collection[str], None]]]
 ResponseT = aiohttp.ClientResponse
 
 
@@ -26,10 +26,13 @@ class BaseAPI:
 
     async def _raw_request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
         # Remove parameters which can not be converted uniquely to string
-        filtered_params = filter_none_and_empty(params)
-        if isinstance(filtered_params, dict):
-            filtered_params = {name: ','.join(value) if isinstance(value, list) else value
-                               for name, value in filtered_params.items()}
+        if params:
+            filtered_params = filter_none_and_empty(params)
+            if isinstance(filtered_params, Mapping):
+                filtered_params = {name: ','.join(value) if isinstance(value, list) else value
+                                   for name, value in filtered_params.items()}
+        else:
+            filtered_params = {}
 
         return await self._session.request(method, url, params=filtered_params, headers=self._headers)
 
@@ -45,18 +48,18 @@ class BaseAPI:
 
 
 @overload
-def filter_none_and_empty(d: List[Tuple[Any, Any]]) -> List[Tuple[Any, Any]]: ...
+def filter_none_and_empty(d: Collection[Tuple[Any, Any]]) -> Collection[Tuple[Any, Any]]: ...
 
 
 @overload
-def filter_none_and_empty(d: Dict[Any, Any]) -> Dict[Any, Any]: ...
+def filter_none_and_empty(d: Mapping[Any, Any]) -> Mapping[Any, Any]: ...
 
 
-def filter_none_and_empty(d: Union[List[Tuple[Any, Any]], Dict[Any, Any]]) \
-        -> Union[List[Tuple[Any, Any]], Dict[Any, Any]]:
-    if isinstance(d, dict):
+def filter_none_and_empty(d: Union[Collection[Tuple[Any, Any]], Mapping[Any, Any]]) \
+        -> Union[Collection[Tuple[Any, Any]], Mapping[Any, Any]]:
+    if isinstance(d, Mapping):
         return {key: value for key, value in d.items() if value}
-    elif isinstance(d, list):
+    else:
         return [(key, value) for key, value in d if value]
 
 
