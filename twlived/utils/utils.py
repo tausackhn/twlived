@@ -11,7 +11,7 @@ T = TypeVar('T')
 
 def retry_on_exception(*exceptions: Type[Exception],
                        wait: float = 2,
-                       max_tries: int = Optional[None]) -> Callable[[CoroT], CoroT]:
+                       max_tries: Optional[int] = None) -> Callable[[CoroT], CoroT]:
     def decorator(f: CoroT) -> CoroT:
         @functools.wraps(f)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
