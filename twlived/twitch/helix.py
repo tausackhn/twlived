@@ -1,3 +1,7 @@
+import asyncio
+import collections
+from asyncio import events
+from asyncio.locks import _ContextManagerMixin
 from functools import wraps
 from itertools import chain
 from time import time
@@ -20,6 +24,9 @@ class HelixData(NamedTuple):
         else:
             cursor = None
         return cls(data['data'], cursor)
+
+    def __bool__(self):
+        return bool(self.data) or bool(self.cursor)
 
 
 class AccessToken(NamedTuple):
@@ -57,13 +64,7 @@ class TwitchAPIHelix(BaseAPI):
         self.client_id = client_id
         self._app_access_token: Optional[AccessToken] = None
 
-        if not self.client_secret:
-            # Without Bearer Token
-            self._ratelimit_remaining = 30
-        else:
-            # Authorization header will be set
-            self._ratelimit_remaining = 120
-        self._ratelimit_reset: Union[int, float] = time()
+        self._token_bucket = TokenBucket()
 
     @property
     async def access_token(self):
@@ -371,16 +372,13 @@ class TwitchAPIHelix(BaseAPI):
         else:
             self._headers.update({'Client-ID': self.client_id})
 
-        if not self._ratelimit_remaining and self._ratelimit_reset > time():
-            raise RateLimitOverflow(f'Wait {self._ratelimit_reset} until the limit is reset')
-
         tries = 0
         # Auto-authorization flow. Trying to request first time and
         # trying to authorize and request again if authorization revoked.
         while tries < 2:
             try:
                 tries += 1
-                response = await super()._request(method, url, params=params)
+                response = await self._limited_request(method, url, params=params)
             except aiohttp.ClientResponseError as e:
                 # Twitch revoked Bearer token.
                 if e.status == 401 and self.client_secret and tries < 2:
@@ -390,18 +388,16 @@ class TwitchAPIHelix(BaseAPI):
                 else:
                     raise
             else:
-                await self._handle_response(response)
                 return response
 
         raise Exception('Should never reach this point')
 
-    async def _handle_response(self, response: ResponseT) -> None:
-        ratelimit_remaining = 30 if not self.client_secret else 120
-        ratelimit_remaining = response.headers.get('Ratelimit-Remaining', None) or ratelimit_remaining
-        ratelimit_reset = response.headers.get('Ratelimit-Reset', None) or time()
-        if ratelimit_remaining and ratelimit_reset:
-            self._ratelimit_remaining = int(ratelimit_remaining)
-            self._ratelimit_reset = int(ratelimit_reset)
+    async def _limited_request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
+        async with self._token_bucket:
+            response = await super()._request(method, url, params=params)
+            self._token_bucket.update_tokens(int(response.headers.get('Ratelimit-Remaining')),
+                                             int(response.headers.get('Ratelimit-Reset')))
+            return response
 
     async def _helix_get(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
         response = await self._request('get', urljoin(TwitchAPIHelix.DOMAIN, path), params=params)
@@ -427,5 +423,95 @@ class HubTopic(str):
         return cls(urljoin(TwitchAPIHelix.DOMAIN, f'streams?user_id={user_id}'))
 
 
-class RateLimitOverflow(TwitchAPIError):
-    pass
+class TokenBucket(_ContextManagerMixin):
+    """ Class provide a rate limiter for coroutines. Only external limiting.
+    The rate limiting algorithm is based on asyncio.Semaphore. The core idea is closely related to token bucket
+    algorithm, but without token autoaddition.
+    Algorithm description:                                                             Tokens | Reset time | Time
+    1. At the start we have 1 token.                                                      1   |    T0      |  T0
+    2. The first coroutine pick this token from bucket. Other coroutines are awaiting.    0   |    T0      |  T1
+    3. After completion of the first coroutine you should update tokens.                  N   |    T       |  T2
+       update_tokens(tokens, tokens_reset) adds N tokens to bucket and
+       set timer `_tokens_reset` when 1 token will be added to the bucket
+    4. Waking up next N coroutines.                                                       0   |    T` > T  |  T3
+       Each coroutine can update tokens in bucket only on a smaller value
+       and tokens reset time only on a higher value, and reset timer too.
+    5. Add 1 token to bucket when real time T4 > T'                                       1   |    T`      |  T4
+    6. Go to the step 1.
+    """
+
+    def __init__(self, *, loop=None) -> None:
+        super().__init__()
+        self._tokens = 1
+        self._tokens_reset = time()
+        self._waiters: collections.deque = collections.deque()
+        self._reset_token_task: Optional[asyncio.Task] = None
+        self._timer_task: Optional[asyncio.Task] = None
+        if loop is not None:
+            self._loop = loop
+        else:
+            self._loop = events.get_event_loop()
+
+    def update_tokens(self, tokens: int, tokens_reset: int) -> None:
+        # Remaining tokens until reset
+        if tokens < self._tokens:
+            self._tokens = tokens
+
+        # After reset time add only one token to the bucket in order to get new tokens and reset time
+        if tokens_reset > self._tokens_reset:
+            self._tokens = tokens
+            self._tokens_reset = tokens_reset
+
+            # Waking up next a few coroutine
+            for _ in range(self._tokens):
+                self._wake_up_next()
+
+            # Recreate reset_token_task
+            if self._reset_token_task and not self._reset_token_task.done():
+                self._reset_token_task.cancel()
+            if self._timer_task:
+                self._timer_task.cancel()
+            reset_event = asyncio.Event()
+            self._reset_token_task = asyncio.create_task(self._reset_tokens(reset_event))
+            self._timer_task = asyncio.create_task(self._timer(self._tokens_reset + 2 - time(), reset_event))
+
+    @staticmethod
+    async def _timer(timeout: float, event: asyncio.Event) -> None:
+        try:
+            await asyncio.sleep(timeout)
+            event.set()
+        finally:
+            pass
+
+    async def _reset_tokens(self, event: asyncio.Event) -> None:
+        try:
+            await event.wait()
+            self._tokens = 1
+            self._wake_up_next()
+        finally:
+            pass
+
+    async def acquire(self) -> bool:
+        # Code from asyncio.Semaphore
+        while self._tokens <= 0:
+            fut = self._loop.create_future()
+            self._waiters.append(fut)
+            try:
+                await fut
+            except:  # noqa: E722
+                fut.cancel()
+                if self._tokens > 0 and not fut.cancelled():
+                    self._wake_up_next()
+                raise
+        self._tokens -= 1
+        return True
+
+    def _wake_up_next(self) -> None:
+        while self._waiters:
+            waiter = self._waiters.popleft()
+            if not waiter.done():
+                waiter.set_result(None)
+                return
+
+    def release(self) -> None:
+        pass

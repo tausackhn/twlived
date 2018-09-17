@@ -66,9 +66,10 @@ class TwitchAPIHidden(BaseAPI):
         token = await self.get_channel_token(channel)
         return await self._get_usher(f'api/channel/hls/{channel}.m3u8',
                                      params={
-                                         'token':        token['token'],
-                                         'sig':          token['sig'],
-                                         'allow_source': 'true',
+                                         'token':            token['token'],
+                                         'sig':              token['sig'],
+                                         'allow_source':     'true',
+                                         'allow_audio_only': 'true',
                                      })
 
     @no_headers

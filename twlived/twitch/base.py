@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Collection, Dict, Mapping, Optional, Tuple, Union, overload
 
 import aiohttp
@@ -22,7 +23,24 @@ class BaseAPI:
         return self._session.closed
 
     async def _request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
-        return await self._raw_request(method, url, params=params)
+        def backoff_delay():
+            base = 2
+            i = 1
+            while True:
+                yield base ** i
+                i += 1
+
+        delay = backoff_delay()
+
+        while True:
+            try:
+                return await self._raw_request(method, url, params=params)
+            except aiohttp.ClientResponseError as e:
+                if e.status == 429:
+                    sleep_time = next(delay)
+                    await asyncio.sleep(sleep_time)
+                else:
+                    raise
 
     async def _raw_request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
         # Remove parameters which can not be converted uniquely to string
@@ -48,15 +66,15 @@ class BaseAPI:
 
 
 @overload
-def filter_none_and_empty(d: Collection[Tuple[Any, Any]]) -> Collection[Tuple[Any, Any]]: ...
+def filter_none_and_empty(d: Collection[Tuple[str, Any]]) -> Collection[Tuple[str, Any]]: ...
 
 
 @overload
-def filter_none_and_empty(d: Mapping[Any, Any]) -> Mapping[Any, Any]: ...
+def filter_none_and_empty(d: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
 
-def filter_none_and_empty(d: Union[Collection[Tuple[Any, Any]], Mapping[Any, Any]]) \
-        -> Union[Collection[Tuple[Any, Any]], Mapping[Any, Any]]:
+def filter_none_and_empty(d: Union[Collection[Tuple[str, Any]], Mapping[str, Any]]) \
+        -> Union[Collection[Tuple[str, Any]], Mapping[str, Any]]:
     if isinstance(d, Mapping):
         return {key: value for key, value in d.items() if value}
     else:
