@@ -1,4 +1,5 @@
 import asyncio
+from asyncio.runners import _cancel_all_tasks
 
 import pytest
 
@@ -14,8 +15,12 @@ def pytest_runtest_setup(item):
 def event_loop(request):
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
-    loop.run_until_complete(loop.shutdown_asyncgens())
-    loop.close()
+    try:
+        _cancel_all_tasks(loop)
+        loop.run_until_complete(loop.shutdown_asyncgens())
+    finally:
+        asyncio.events.set_event_loop(None)
+        loop.close()
 
 
 @pytest.fixture(scope='module')
