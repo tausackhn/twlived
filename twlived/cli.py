@@ -40,6 +40,8 @@ def main(channel: str, quality: str, main_publisher: Publisher, twitch_api: Twit
             streams_info, _ = twitch_api.get_streams(user_login=[channel], type='live')
             if streams_info:
                 stream_info = streams_info[0]
+                if not stream_info['type'] == 'live':
+                    continue
                 main_publisher.publish(WaitLiveVideo())
                 videos_info, _ = twitch_api.get_videos(user_id=stream_info['user_id'], type='archive')
                 # Select the latest video

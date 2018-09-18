@@ -22,7 +22,7 @@ if __name__ == '__main__':
         channel = config['main']['channel'].lower()
         quality = config['main']['quality'] or 'chunked'
         twitch_api = TwitchAPI(config['twitch']['client_id'],
-                               request_wrapper=retry_on_exception(RequestException, wait=0.5, max_tries=10))
+                               request_wrapper=retry_on_exception(RequestException, wait=6, max_tries=10))
         storage = Storage(config['storage']['path'],
                           channel_from_id=lambda id_: str(twitch_api.get_users(id=[id_])[0]['login']),
                           vod_path_template=config['storage']['vod_path'])

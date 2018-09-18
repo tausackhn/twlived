@@ -106,7 +106,7 @@ class TwitchPlaylist:
 
 class TwitchDownloadManager(Publisher):
     _CHUNK_SIZE = 10
-    _TIME_LIMIT = _CHUNK_SIZE * 5
+    _TIME_LIMIT = _CHUNK_SIZE * 10
     _SLEEP_TIME = 30
     _DURATION_RE: ClassVar[Pattern] = re.compile(r'(?:(?P<hours>\d+)h)?(?:(?P<minutes>\d+)m)?(?:(?P<seconds>\d+)s)?')
 
