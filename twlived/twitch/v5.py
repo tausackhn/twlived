@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, cast
 from urllib.parse import urljoin
 
 from .base import BaseAPI, JSONT, URLParameterT, bool_to_str, filter_none_and_empty
@@ -24,7 +24,7 @@ class TwitchAPIv5(BaseAPI):
             'Accept':    'application/vnd.twitchtv.v5+json',
         })
 
-    async def get_cheermotes(self, *, channel_id: str = None) -> JSONT:
+    async def get_cheermotes(self, *, channel_id: Optional[str] = None) -> JSONT:
         return await self._kraken_get('bits/actions', params={'channel_id': channel_id})
 
     async def get_channel_by_id(self, channel_id: str) -> JSONT:
@@ -365,4 +365,4 @@ class TwitchAPIv5(BaseAPI):
 
     async def _kraken_get(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
         response = await self._request('get', urljoin(TwitchAPIv5.DOMAIN, path), params=params)
-        return await response.json()
+        return cast(JSONT, await response.json())

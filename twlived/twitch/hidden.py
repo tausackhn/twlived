@@ -1,17 +1,20 @@
+import asyncio
 import json
 import time
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, TypeVar, cast
 from urllib.parse import urljoin
 
 from .base import BaseAPI, JSONT, ResponseT, URLParameterT
 
+T = TypeVar('T')
 
-def timed_cache(func: Callable[..., Any]) -> Callable[..., Any]:
+
+def timed_cache(func: Callable[..., Awaitable[JSONT]]) -> Callable[..., Awaitable[JSONT]]:
     cache: Dict[str, Tuple[Dict[str, Any], int]] = {}
 
     @wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    async def wrapper(*args: Any, **kwargs: Any) -> JSONT:
         _, video_id, *_ = args
         if video_id not in cache or cache[video_id][1] < time.time():
             token = await func(*args, **kwargs)
@@ -21,15 +24,14 @@ def timed_cache(func: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def no_headers(func: Callable[..., Any]) -> Callable[..., Any]:
+def no_headers(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
     @wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+    async def wrapper(*args: Any, **kwargs: Any) -> T:
         self, *_ = args
-        headers = self._headers
-        self._headers = {}
-        return_value = await func(*args, **kwargs)
+        self._headers, headers = {}, self._headers
+        task = asyncio.create_task(func(*args, **kwargs))
         self._headers = headers
-        return return_value
+        return cast(T, await task)
 
     return wrapper
 
@@ -73,10 +75,10 @@ class TwitchAPIHidden(BaseAPI):
                                      })
 
     @no_headers
-    async def get_channel_badges(self, channel_id: str):
+    async def get_channel_badges(self, channel_id: str) -> JSONT:
         # https://badges.twitch.tv/v1/badges/channels/<channel_id>/display
         response = await self._request('get', f'https://badges.twitch.tv/v1/badges/channels/{channel_id}/display')
-        return await response.json()
+        return cast(JSONT, await response.json())
 
     async def _request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
         self._headers.update({'Client-ID': self.client_id})
@@ -84,7 +86,7 @@ class TwitchAPIHidden(BaseAPI):
 
     async def _get_api(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
         response = await self._request('get', urljoin(TwitchAPIHidden.TOKEN_DOMAIN, path), params=params)
-        return await response.json()
+        return cast(JSONT, await response.json())
 
     async def _get_usher(self, path: str, *, params: Optional[URLParameterT] = None) -> str:
         response = await self._request('get', urljoin(TwitchAPIHidden.USHER_DOMAIN, path), params=params)

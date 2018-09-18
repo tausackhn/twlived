@@ -25,6 +25,10 @@ class TwitchAPI(TwitchAPIAdapter):
         self._hidden_api = TwitchAPIHidden(client_id)
 
     @property
+    def closed(self) -> bool:
+        return all(adapter.closed for adapter in self._api_adapters.values()) and self._hidden_api.closed
+
+    @property
     def api(self) -> BaseAPI:
         return self._api_adapters[self.version].api
 
@@ -65,10 +69,7 @@ class TwitchAPI(TwitchAPIAdapter):
     async def get_live_variant_playlist(self, channel: str) -> str:
         return await self._hidden_api.get_live_variant_playlist(channel)
 
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def close(self) -> None:
         for adapter in self._api_adapters.values():
             await adapter.close()
         await self._hidden_api.close()

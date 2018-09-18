@@ -5,7 +5,7 @@ from asyncio.locks import _ContextManagerMixin
 from functools import wraps
 from itertools import chain
 from time import time
-from typing import Any, Callable, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Callable, Deque, List, NamedTuple, Optional, Tuple, Union, cast
 from urllib.parse import urljoin
 
 import aiohttp
@@ -18,14 +18,14 @@ class HelixData(NamedTuple):
     cursor: Optional[str]
 
     @classmethod
-    def from_json(cls, data: JSONT):
+    def from_json(cls, data: JSONT) -> 'HelixData':
         if 'pagination' in data:
             cursor = data['pagination']['cursor'] if data['pagination'] else None
         else:
             cursor = None
         return cls(data['data'], cursor)
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.data) or bool(self.cursor)
 
 
@@ -67,11 +67,13 @@ class TwitchAPIHelix(BaseAPI):
         self._token_bucket = TokenBucket()
 
     @property
-    async def access_token(self):
+    async def access_token(self) -> str:
         if not self.client_secret:
             raise TwitchAPIError('Requires client_secret')
-        if (self.client_secret and not self._app_access_token) or self._app_access_token.expires > time():
+        if not self._app_access_token or self._app_access_token.expires > time():
             await self.authorize()
+        if not self._app_access_token:
+            raise TwitchAPIError('Not authorized')
         return self._app_access_token.access_token
 
     # noinspection PyShadowingBuiltins
@@ -239,7 +241,7 @@ class TwitchAPIHelix(BaseAPI):
         params = [('id', id_) for id_ in id or []] + [('name', name_) for name_ in name or []]
 
         response = await self._helix_get('games', params=params)
-        return response['data']
+        return cast(List[JSONT], response['data'])
 
     async def get_top_games(self, *,
                             after: Optional[str] = None,
@@ -305,7 +307,7 @@ class TwitchAPIHelix(BaseAPI):
                                 after: Optional[str] = None,
                                 first: int = 20,
                                 from_id: Optional[str] = None,
-                                to_id: Optional[str] = None):
+                                to_id: Optional[str] = None) -> HelixData:
         if not (from_id or to_id):
             raise ValueError('At minimum, from_id or to_id must be provided')
         if first > TwitchAPIHelix.MAX_IDS:
@@ -324,7 +326,7 @@ class TwitchAPIHelix(BaseAPI):
     @require_app_token
     async def get_webhook_subscriptions(self, *,
                                         after: Optional[str] = None,
-                                        first: int = 20):
+                                        first: int = 20) -> HelixData:
         if first > TwitchAPIHelix.MAX_IDS:
             raise ValueError(f'The value of the first must be less than or equal to {TwitchAPIHelix.MAX_IDS}')
 
@@ -353,7 +355,7 @@ class TwitchAPIHelix(BaseAPI):
         await self._helix_post('webhooks/hub', params=params)
 
     @require_app_token
-    async def authorize(self):
+    async def authorize(self) -> None:
         params = {
             'client_id':     self.client_id,
             'client_secret': self.client_secret,
@@ -401,26 +403,26 @@ class TwitchAPIHelix(BaseAPI):
 
     async def _helix_get(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
         response = await self._request('get', urljoin(TwitchAPIHelix.DOMAIN, path), params=params)
-        return await response.json()
+        return cast(JSONT, await response.json())
 
     async def _helix_post(self, path: str, *, params: Optional[URLParameterT] = None) -> str:
         response = await self._request('post', urljoin(TwitchAPIHelix.DOMAIN, path), params=params)
         return await response.text()
 
 
-class HubTopic(str):
-    @classmethod
-    def follows(cls, from_id: str = '', to_id: str = '') -> str:
+class HubTopic:
+    @staticmethod
+    def follows(from_id: str = '', to_id: str = '') -> str:
         if not (from_id or to_id):
             raise ValueError('Specify at least one argument from_id or to_id')
         params = 'first=1'
         params += f'&from_id={from_id}' if from_id else ''
         params += f'&to_id={to_id}' if to_id else ''
-        return cls(urljoin(TwitchAPIHelix.DOMAIN, f'users/follows?{params}'))
+        return str(urljoin(TwitchAPIHelix.DOMAIN, f'users/follows?{params}'))
 
-    @classmethod
-    def streams(cls, user_id: str) -> str:
-        return cls(urljoin(TwitchAPIHelix.DOMAIN, f'streams?user_id={user_id}'))
+    @staticmethod
+    def streams(user_id: str) -> str:
+        return str(urljoin(TwitchAPIHelix.DOMAIN, f'streams?user_id={user_id}'))
 
 
 class TokenBucket(_ContextManagerMixin):
@@ -440,11 +442,11 @@ class TokenBucket(_ContextManagerMixin):
     6. Go to the step 1.
     """
 
-    def __init__(self, *, loop=None) -> None:
+    def __init__(self, *, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
         super().__init__()
         self._tokens = 1
         self._tokens_reset = time()
-        self._waiters: collections.deque = collections.deque()
+        self._waiters: Deque[asyncio.Future] = collections.deque()
         self._reset_token_task: Optional[asyncio.Task] = None
         self._timer_task: Optional[asyncio.Task] = None
         if loop is not None:

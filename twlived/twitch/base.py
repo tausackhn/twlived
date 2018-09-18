@@ -1,5 +1,7 @@
 import asyncio
-from typing import Any, Collection, Dict, Mapping, Optional, Tuple, Union, overload
+from abc import ABCMeta, abstractmethod
+from types import TracebackType
+from typing import Any, AsyncContextManager, Collection, Dict, Iterator, Mapping, Optional, Tuple, Type, Union, overload
 
 import aiohttp
 
@@ -8,7 +10,24 @@ URLParameterT = Union[Collection[Tuple[str, Optional[str]]], Mapping[str, Union[
 ResponseT = aiohttp.ClientResponse
 
 
-class BaseAPI:
+class CloseableAsyncContextManager(AsyncContextManager, metaclass=ABCMeta):
+    async def __aexit__(self, exc_type: Optional[Type[BaseException]],
+                        exc_val: Optional[BaseException],
+                        exc_tb: Optional[TracebackType]) -> Optional[bool]:
+        await self.close()
+        return None
+
+    @abstractmethod
+    async def close(self) -> None:
+        pass
+
+    @property
+    @abstractmethod
+    def closed(self) -> bool:
+        pass
+
+
+class BaseAPI(CloseableAsyncContextManager):
     def __init__(self, *, retry: bool = False) -> None:
         self._session = aiohttp.ClientSession(raise_for_status=True,
                                               timeout=aiohttp.client.ClientTimeout(sock_connect=10,
@@ -19,11 +38,11 @@ class BaseAPI:
         self._headers: Dict[str, str] = {}
 
     @property
-    def closed(self):
+    def closed(self) -> bool:
         return self._session.closed
 
     async def _request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
-        def backoff_delay():
+        def backoff_delay() -> Iterator[int]:
             base = 2
             i = 1
             while True:
@@ -54,13 +73,7 @@ class BaseAPI:
 
         return await self._session.request(method, url, params=filtered_params, headers=self._headers)
 
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
-
-    async def close(self):
+    async def close(self) -> None:
         if not self.closed:
             await self._session.close()
 
