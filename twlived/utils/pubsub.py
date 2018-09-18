@@ -13,7 +13,7 @@ EventHandlerT = Callable[['BaseEvent'], Awaitable[None]]
 class BaseEvent:
     created_at: float = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.created_at = time.time()
 
 
