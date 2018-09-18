@@ -17,6 +17,6 @@ config.yaml
 *.dat
 *.dir
 
-/.pytest_cache/
-/htmlcov/
-/.coverage
+**/.pytest_cache/
+htmlcov/
+.coverage
