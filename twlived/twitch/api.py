@@ -1,8 +1,8 @@
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Union
 
 from .adapters import TwitchAPIAdapter, TwitchAPIHelixAdapter, TwitchAPIv5Adapter
-from .base import BaseAPI, JSONT, TwitchAPIError
-from .data import StreamInfo
+from .base import BaseAPI, TwitchAPIError
+from .data import StreamInfo, TwitchVideo
 from .hidden import TwitchAPIHidden
 
 
@@ -54,10 +54,11 @@ class TwitchAPI(TwitchAPIAdapter):
     async def get_stream(self, channel: str, *, stream_type: str = 'live') -> Optional[StreamInfo]:
         return await self._adapter.get_stream(channel, stream_type=stream_type)
 
-    async def get_videos(self, channel: str, video_type: str = 'archive') -> List[JSONT]:
-        return await self._adapter.get_videos(channel, video_type=video_type)
+    async def get_videos(self, channel: str, video_type: str = 'archive', *,
+                         limit: Union[str, int] = 100) -> List[TwitchVideo]:
+        return await self._adapter.get_videos(channel, video_type=video_type, limit=limit)
 
-    async def get_video(self, video_id: str) -> JSONT:
+    async def get_video(self, video_id: str) -> TwitchVideo:
         return await self._adapter.get_video(video_id)
 
     async def get_streams(self, channels: List[str], *, stream_type: str = 'live') -> List[StreamInfo]:

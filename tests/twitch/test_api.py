@@ -52,8 +52,9 @@ class TestTwitchAPI:
     @pytest.mark.parametrize('version', TwitchAPI.VERSIONS)
     async def test_get_videos(self, twitch_api, version):
         twitch_api.version = version
-        response = await twitch_api.get_videos('guit88man', video_type='highlight')
-        assert len(response) == 100
+        response = await twitch_api.get_videos('guit88man', video_type='highlight', limit=110)
+        assert len(response) == 110
+        assert all(map(lambda v: v.video_type == 'highlight', response))
 
     @pytest.mark.parametrize('version', TwitchAPI.VERSIONS)
     async def test_get_video(self, twitch_api, version):
