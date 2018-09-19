@@ -1,9 +1,11 @@
 import asyncio
 import collections
+import json
 from asyncio import events
 from asyncio.locks import _ContextManagerMixin
 from functools import wraps
 from itertools import chain
+from pathlib import Path
 from time import time
 from typing import Any, Callable, Deque, List, NamedTuple, Optional, Tuple, Union, cast
 from urllib.parse import urljoin
@@ -33,6 +35,18 @@ class AccessToken(NamedTuple):
     access_token: str
     expires: Union[float, int]
 
+    @classmethod
+    def from_file(cls, filename: Union[str, Path] = '.apisession') -> 'AccessToken':
+        with open(filename) as file:
+            try:
+                return cls(**json.load(file))
+            except Exception as e:
+                raise ValueError(f'Can not read access token from {filename}') from e
+
+    def save_to_file(self, filename: Union[str, Path] = '.apisession') -> None:
+        with open(filename, 'w') as file:
+            json.dump(self._asdict(), file)
+
 
 def require_app_token(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
@@ -50,6 +64,7 @@ class TwitchAPIHelix(BaseAPI):
 
     DOMAIN: str = 'https://api.twitch.tv/helix/'
     APP_TOKEN_URL: str = 'https://id.twitch.tv/oauth2/token'
+    TOKEN_VALIDATION_URL: str = 'https://id.twitch.tv/oauth2/validate'
     MAX_IDS: int = 100
     STREAM_TYPES = {'all', 'live', 'vodcast'}
     PERIODS = {'all', 'day', 'month', 'week'}
@@ -65,15 +80,28 @@ class TwitchAPIHelix(BaseAPI):
         self._app_access_token: Optional[AccessToken] = None
 
         self._token_bucket = TokenBucket()
+        self._app_access_token_path = Path('.') / '.apisession'
 
     @property
     async def access_token(self) -> str:
         if not self.client_secret:
             raise TwitchAPIError('Requires client_secret')
-        if not self._app_access_token or self._app_access_token.expires > time():
-            await self.authorize()
+
         if not self._app_access_token:
-            raise TwitchAPIError('Not authorized')
+            try:
+                self._app_access_token = AccessToken.from_file(self._app_access_token_path)
+                await self.validate_token(self._app_access_token.access_token)
+            except (FileNotFoundError, TwitchAPIError, ValueError):
+                pass
+
+        if not self._app_access_token or self._app_access_token.expires < time():
+            await self.authorize()
+
+        if not self._app_access_token:
+            raise UnauthorizedError
+
+        self._app_access_token.save_to_file(self._app_access_token_path)
+
         return self._app_access_token.access_token
 
     # noinspection PyShadowingBuiltins
@@ -356,14 +384,28 @@ class TwitchAPIHelix(BaseAPI):
 
     @require_app_token
     async def authorize(self) -> None:
-        params = {
-            'client_id':     self.client_id,
-            'client_secret': self.client_secret,
-            'grant_type':    'client_credentials',
-        }
-        response = await (await super()._request('post', TwitchAPIHelix.APP_TOKEN_URL, params=params)).json()
-        self._app_access_token = AccessToken(access_token=response['access_token'],
-                                             expires=time() + response['expires_in'] - 1)
+        try:
+            params = {
+                'client_id':     self.client_id,
+                'client_secret': self.client_secret,
+                'grant_type':    'client_credentials',
+            }
+            response = await (await super()._request('post', TwitchAPIHelix.APP_TOKEN_URL, params=params)).json()
+        except aiohttp.ClientResponseError as e:
+            if e.status == 401:
+                raise UnauthorizedError from e
+        else:
+            self._app_access_token = AccessToken(access_token=response['access_token'],
+                                                 expires=time() + response['expires_in'] - 1)
+
+    @require_app_token
+    async def validate_token(self, access_token: str) -> None:
+        self._headers.update({'Authorization': f'Bearer {access_token}'})
+        try:
+            await super()._request('get', TwitchAPIHelix.TOKEN_VALIDATION_URL)
+        except aiohttp.ClientResponseError as e:
+            if e.status == 401:
+                raise UnauthorizedError from e
 
     async def _request(self, method: str, url: str, *, params: Optional[URLParameterT] = None) -> ResponseT:
         # Prefer authorized client due to higher rate limit
@@ -517,3 +559,8 @@ class TokenBucket(_ContextManagerMixin):
 
     def release(self) -> None:
         pass
+
+
+class UnauthorizedError(TwitchAPIError):
+    def __init__(self) -> None:
+        super().__init__('Unauthorized')

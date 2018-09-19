@@ -7,6 +7,7 @@ __pycache__/
 
 # Configuration files
 config.yaml
+**/.apisession
 
 # Log files
 *.log
