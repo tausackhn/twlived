@@ -9,7 +9,7 @@ mypy-extensions = "*"
 "m3u8" = ">=0.3.5"
 PyYAML = "*"
 configargparse = "*"
-aiohttp = "*"
+aiohttp = ">=3.4.0"
 
 [dev-packages]
 "flake8" = "*"
