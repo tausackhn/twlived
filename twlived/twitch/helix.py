@@ -10,7 +10,7 @@ from time import time
 from typing import Any, Callable, Deque, List, NamedTuple, Optional, Tuple, Union, cast
 from urllib.parse import urljoin
 
-import aiohttp
+from aiohttp.client_exceptions import ClientResponseError
 
 from .base import BaseAPI, JSONT, ResponseT, TwitchAPIError, URLParameterT
 
@@ -391,7 +391,7 @@ class TwitchAPIHelix(BaseAPI):
                 'grant_type':    'client_credentials',
             }
             response = await (await super()._request('post', TwitchAPIHelix.APP_TOKEN_URL, params=params)).json()
-        except aiohttp.ClientResponseError as e:
+        except ClientResponseError as e:
             if e.status == 401:
                 raise UnauthorizedError from e
         else:
@@ -403,7 +403,7 @@ class TwitchAPIHelix(BaseAPI):
         self._headers.update({'Authorization': f'Bearer {access_token}'})
         try:
             await super()._request('get', TwitchAPIHelix.TOKEN_VALIDATION_URL)
-        except aiohttp.ClientResponseError as e:
+        except ClientResponseError as e:
             if e.status == 401:
                 raise UnauthorizedError from e
 
@@ -423,7 +423,7 @@ class TwitchAPIHelix(BaseAPI):
             try:
                 tries += 1
                 response = await self._limited_request(method, url, params=params)
-            except aiohttp.ClientResponseError as e:
+            except ClientResponseError as e:
                 # Twitch revoked Bearer token.
                 if e.status == 401 and self.client_secret and tries < 2:
                     # Trying to authorize once again.

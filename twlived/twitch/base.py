@@ -4,6 +4,7 @@ from types import TracebackType
 from typing import Any, AsyncContextManager, Collection, Dict, Iterator, Mapping, Optional, Tuple, Type, Union, overload
 
 import aiohttp
+from aiohttp.client_exceptions import ClientResponseError
 
 JSONT = Dict[str, Any]
 URLParameterT = Union[Collection[Tuple[str, Optional[str]]], Mapping[str, Union[str, Collection[str], None]]]
@@ -30,8 +31,8 @@ class CloseableAsyncContextManager(AsyncContextManager, metaclass=ABCMeta):
 class BaseAPI(CloseableAsyncContextManager):
     def __init__(self, *, retry: bool = False) -> None:
         self._session = aiohttp.ClientSession(raise_for_status=True,
-                                              timeout=aiohttp.client.ClientTimeout(sock_connect=10,
-                                                                                   total=20))
+                                              timeout=aiohttp.client.ClientTimeout(sock_connect=30,
+                                                                                   total=60))
         self._id_storage: Dict[str, Dict[str, Any]] = {}
         self._login_storage: Dict[str, Dict[str, Any]] = {}
         self.retry = retry
@@ -54,7 +55,7 @@ class BaseAPI(CloseableAsyncContextManager):
         while True:
             try:
                 return await self._raw_request(method, url, params=params)
-            except aiohttp.ClientResponseError as e:
+            except ClientResponseError as e:
                 if e.status == 429:
                     sleep_time = next(delay)
                     await asyncio.sleep(sleep_time)
@@ -90,8 +91,7 @@ def filter_none_and_empty(d: Union[Collection[Tuple[str, Any]], Mapping[str, Any
         -> Union[Collection[Tuple[str, Any]], Mapping[str, Any]]:
     if isinstance(d, Mapping):
         return {key: value for key, value in d.items() if value}
-    else:
-        return [(key, value) for key, value in d if value]
+    return [(key, value) for key, value in d if value]
 
 
 def bool_to_str(value: bool) -> str:

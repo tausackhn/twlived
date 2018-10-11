@@ -83,7 +83,7 @@ class TwitchAPIv5Adapter(TwitchAPIAdapter):
                           data=data)
 
     async def get_videos(self, channel: str, video_type: str = 'archive', *,
-                         limit: Union[str, int] = 100) -> List[TwitchVideo]:
+                         limit: Union[str, int] = TwitchAPIv5.MAX_LIMIT) -> List[TwitchVideo]:
         await super().get_videos(channel, video_type, limit=limit)
 
         if video_type == 'all':
@@ -92,7 +92,7 @@ class TwitchAPIv5Adapter(TwitchAPIAdapter):
 
         videos: List[TwitchVideo] = []
         number_of_videos = None if isinstance(limit, str) else limit
-        for offset, n in offset_generator(number_of_videos, part_size=100):
+        for offset, n in offset_generator(number_of_videos, part_size=TwitchAPIv5.MAX_LIMIT):
             data = await self._api.get_channel_videos(user_id, offset=offset, limit=n, broadcast_type=[video_type])
             if not data['videos']:
                 break
@@ -154,7 +154,7 @@ class TwitchAPIHelixAdapter(TwitchAPIAdapter):
         return cast(StreamInfo, await prepare_stream_info(self._api, stream_data))
 
     async def get_videos(self, channel: str, video_type: str = 'archive', *,
-                         limit: Union[str, int] = 100) -> List[TwitchVideo]:
+                         limit: Union[str, int] = TwitchAPIHelix.MAX_IDS) -> List[TwitchVideo]:
         await super().get_videos(channel, video_type, limit=limit)
 
         user_id = await self._get_user_id(channel)
@@ -162,7 +162,7 @@ class TwitchAPIHelixAdapter(TwitchAPIAdapter):
         videos: List[TwitchVideo] = []
         number_of_videos = None if isinstance(limit, str) else limit
         cursor = None
-        for _, n in offset_generator(number_of_videos, part_size=100):
+        for _, n in offset_generator(number_of_videos, part_size=TwitchAPIHelix.MAX_IDS):
             data = await self._api.get_videos(user_id=user_id, first=n, type=video_type, after=cursor)
             cursor = data.cursor
             if not data.data:

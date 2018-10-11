@@ -115,8 +115,7 @@ class WebhookTracker(StreamTrackerBase):
         elif hub_mode in {'subscribe', 'unsubscribe'}:
             self._subscription_statuses[request.match_info['channel']] = f'{hub_mode}d'
             return web.Response(text=request.query['hub.challenge'], status=200)
-        else:
-            return web.Response(status=400)
+        return web.Response(status=400)
 
     async def _register_webhooks(self) -> None:
         @retry_on_exception(*CONNECTION_ERRORS, wait=10, max_tries=10)
@@ -128,8 +127,8 @@ class WebhookTracker(StreamTrackerBase):
         user_data = await self.api.get_users(login=self.channels)
         tasks = []
         for user in user_data:
-            webhook_path = f'http://{self.host}:{self.port}' \
-                           f'/{WebhookTracker.WEBHOOK_BASE}/{WebhookTracker.STREAMS}/{user["login"]}'
+            webhook_path = (f'http://{self.host}:{self.port}'
+                            f'/{WebhookTracker.WEBHOOK_BASE}/{WebhookTracker.STREAMS}/{user["login"]}')
             task = asyncio.create_task(subscribe_webhook(webhook_path, HubTopic.streams(user['id']),
                                                          str(self.webhook_secret, encoding='ascii'),
                                                          self._lease_time))
@@ -148,8 +147,8 @@ class WebhookTracker(StreamTrackerBase):
                                                     if status == 'subscribed'])
         tasks = []
         for user in user_data:
-            webhook_path = f'http://{self.host}:{self.port}' \
-                           f'/{WebhookTracker.WEBHOOK_BASE}/{WebhookTracker.STREAMS}/{user["login"]}'
+            webhook_path = (f'http://{self.host}:{self.port}'
+                            f'/{WebhookTracker.WEBHOOK_BASE}/{WebhookTracker.STREAMS}/{user["login"]}')
             task = asyncio.create_task(unsubscribe_webhook(webhook_path, HubTopic.streams(user['id']),
                                                            str(self.webhook_secret, encoding='ascii'),
                                                            self._lease_time))

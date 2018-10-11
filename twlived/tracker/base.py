@@ -2,12 +2,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Type
 
-import aiohttp
+from aiohttp.client_exceptions import ClientConnectionError, ClientPayloadError, ClientResponseError
 
 from ..twitch import StreamInfo
 from ..utils import BaseEvent, Publisher
 
-CONNECTION_ERRORS = aiohttp.ClientResponseError, aiohttp.ClientConnectionError, aiohttp.ClientPayloadError
+CONNECTION_ERRORS = ClientResponseError, ClientConnectionError, ClientPayloadError
 
 
 @dataclass
@@ -33,7 +33,7 @@ class StreamOffline(BaseEvent):
 
 
 class StreamTrackerBase(Publisher, ABC):
-    events = [StreamOnline]
+    events = [StreamOnline, StreamOffline]
 
     def __init__(self, channels: List[str]) -> None:
         super().__init__()
