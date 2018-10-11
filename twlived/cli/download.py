@@ -1,4 +1,4 @@
-from ._common import Command, COMMON_ARGS, SetStoragePathAction
+from ._common import COMMON_ARGS, Command, SetStoragePathAction
 
 
 def _download():
@@ -28,5 +28,5 @@ command = Command(
             'metavar': 'DIR',
             'default': '.',
         }),
-    ]
+    ],
 )

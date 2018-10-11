@@ -2,8 +2,7 @@ import logging
 from datetime import timedelta
 from typing import Dict, List, NamedTuple, Optional, Union
 
-import ruamel.yaml as yaml
-from configargparse import ArgParser, ConfigFileParserException, YAMLConfigFileParser
+from configargparse import ArgParser, YAMLConfigFileParser
 from iso8601 import parse_date
 
 from . import download, live, shell
@@ -16,11 +15,6 @@ PACKAGE_NAME = 'twlived'
 PACKAGE_DESCRIPTION = ''
 PACKAGE_WEBSITE = 'https://github.com/tausackhn/twlived'
 COMMANDS: List[Command] = list(map(lambda module: getattr(module, 'command'), [live, download, shell]))
-
-
-class ExtYAMLConfigFileParser(YAMLConfigFileParser):
-    def _load_yaml(self):
-        return yaml
 
 
 class Stream(NamedTuple):
@@ -56,8 +50,8 @@ def is_video_from_stream(video: Dict[str, str], stream: Dict[str, str]) -> bool:
 
 
 def download_stream(event):
-    user_id = event.stream_info['id']
-    video_info = None
+    # user_id = event.stream_info['id']
+    # video_info = None
     # while not video_info:
     #     videos_info, _ = twitch_api.get_videos(user_id=user_id, type='archive')
     #     # Select the latest video
@@ -69,6 +63,7 @@ def download_stream(event):
     #         # `exist_ok=True` Possible if there have been a network problem.
     #         storage.add_broadcast(video, path, exist_ok=True)
     #         delay = new_delay()
+    pass
 
 
 def main(configuration: TaskConfiguration) -> None:
@@ -133,7 +128,7 @@ def get_parser():
         subparser = subparsers.add_parser(command.name,
                                           help=command.description,
                                           default_config_files=[DEFAULT_CONFIG_FILE],
-                                          config_file_parser_class=ExtYAMLConfigFileParser)
+                                          config_file_parser_class=YAMLConfigFileParser)
         subparser.set_defaults(func=command.func)
         for args, kwargs in sorted(command.arguments, key=lambda x: not (is_config_file(x) or is_required(x))):
             subparser.add_argument(*args, **kwargs)

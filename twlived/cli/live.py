@@ -1,4 +1,4 @@
-from ._common import Command, COMMON_ARGS, SetStoragePathAction
+from ._common import COMMON_ARGS, Command, SetStoragePathAction
 
 
 def _live(args):
@@ -55,5 +55,5 @@ command = Command(
             'metavar': 'TG_CHANNEL',
             'action':  'append',
         }),
-    ]
+    ],
 )

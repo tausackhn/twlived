@@ -69,7 +69,7 @@ bad_calls = {
         ((), {'period': 'year'}),
         ((), {'broadcast_type': 'broadcast'}),
         ((), {'sort': 'name'}),
-    ]
+    ],
 }
 
 

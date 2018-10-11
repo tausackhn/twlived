@@ -151,7 +151,7 @@ class TestTwitchAPIHelix:
     async def test_get_clips_id(self, helix_api):
         ids = {
             'SecretiveCarefulSheepM4xHeh',
-            'EsteemedNiceNikudonKreygasm'
+            'EsteemedNiceNikudonKreygasm',
         }
         helix_data = await helix_api.get_clips(id=list(ids))
         assert isinstance(helix_data, HelixData)
