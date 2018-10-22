@@ -400,7 +400,7 @@ class TwitchAPIHelix(BaseAPI):
 
     @require_app_token
     async def validate_token(self, access_token: str) -> None:
-        self._headers.update({'Authorization': f'Bearer {access_token}'})
+        self._headers.update({'Authorization': f'OAuth {access_token}'})
         try:
             await super()._request('get', TwitchAPIHelix.TOKEN_VALIDATION_URL)
         except ClientResponseError as e:
