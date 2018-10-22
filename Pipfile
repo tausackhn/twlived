@@ -10,6 +10,7 @@ mypy-extensions = "*"
 PyYAML = "*"
 configargparse = "*"
 aiohttp = ">=3.4.0,<3.5.0"
+multidict = "*"
 
 [dev-packages]
 "flake8" = "*"
