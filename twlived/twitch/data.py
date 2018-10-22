@@ -9,6 +9,7 @@ class StreamInfo(NamedTuple):
     channel_id: str
     game: str
     status: str
+    started_at: datetime
     data: JSONT
 
 

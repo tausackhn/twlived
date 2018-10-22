@@ -80,6 +80,7 @@ class TwitchAPIv5Adapter(TwitchAPIAdapter):
                           channel_id=data['channel']['_id'],
                           game=data['game'],
                           status=data['channel']['status'],
+                          started_at=parse_date(data['created_at']),
                           data=data)
 
     async def get_videos(self, channel: str, video_type: str = 'archive', *,
@@ -125,6 +126,7 @@ class TwitchAPIv5Adapter(TwitchAPIAdapter):
                            channel_id=data['channel']['_id'],
                            game=data['game'],
                            status=data['channel']['status'],
+                           started_at=parse_date(data['created_at']),
                            data=data)
                 for data in data_list]
 
@@ -220,6 +222,7 @@ async def prepare_stream_info(helix_api: TwitchAPIHelix, stream_data: HelixData)
                                channel_id=stream['user_id'],
                                game=games[stream['game_id']],
                                status=stream['title'],
+                               started_at=parse_date(stream['started_at']),
                                data=stream)
                     for stream in stream_data.data]
     return stream_infos if len(stream_infos) > 1 else stream_infos[0]
