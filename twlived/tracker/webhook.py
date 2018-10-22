@@ -9,7 +9,7 @@ from typing import Awaitable, Callable, Deque, Dict, List, Optional, TypeVar, ca
 
 from aiohttp import web
 
-from .base import CONNECTION_ERRORS, StreamOffline, StreamOnline, StreamTrackerBase
+from .base import CONNECTION_ERRORS, StreamTrackerBase
 from ..twitch import HelixData, HubTopic, StreamInfo, TwitchAPI, TwitchAPIHelix
 from ..twitch.adapters import prepare_stream_info
 from ..utils import retry_on_exception
@@ -98,11 +98,8 @@ class WebhookTracker(StreamTrackerBase):
 
         if not self.already_published(event_id):
             stream_data = HelixData.from_json(await request.json())
-            if stream_data:
-                stream_info = cast(StreamInfo, await prepare_stream_info(self.api, stream_data))
-                await self.publish(StreamOnline.from_stream_info(stream_info))
-            else:
-                await self.publish(StreamOffline(channel_name=request.match_info['channel']))
+            stream_info = cast(StreamInfo, await prepare_stream_info(self.api, stream_data)) if stream_data else None
+            await self.stream_info_to_event(request.match_info['channel'], stream_info)
 
         return web.Response()
 
