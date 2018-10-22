@@ -65,7 +65,7 @@ class TwitchAPI(TwitchAPIAdapter):
         return await self._adapter.get_streams(channels, stream_type=stream_type)
 
     async def get_variant_playlist(self, video_id: str) -> str:
-        return await self._hidden_api.get_variant_playlist(video_id)
+        return await self._hidden_api.get_variant_playlist(video_id.lstrip('v'))
 
     async def get_live_variant_playlist(self, channel: str) -> str:
         return await self._hidden_api.get_live_variant_playlist(channel)
