@@ -487,7 +487,7 @@ class TokenBucket(_ContextManagerMixin):
     def __init__(self, *, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
         super().__init__()
         self._tokens = 1
-        self._tokens_reset = time()
+        self._tokens_reset = 0
         self._waiters: Deque[asyncio.Future] = collections.deque()
         self._reset_token_task: Optional[asyncio.Task] = None
         self._timer_task: Optional[asyncio.Task] = None
