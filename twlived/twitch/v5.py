@@ -1,7 +1,7 @@
-from typing import List, Optional, cast
+from typing import Iterable, List, Optional, cast
 from urllib.parse import urljoin
 
-from .base import BaseAPI, JSONT, URLParameterT, bool_to_str, filter_none_and_empty
+from .base import BaseAPI, JSONT, URLParameterT, bool_to_str
 
 
 class TwitchAPIv5(BaseAPI):
@@ -68,7 +68,7 @@ class TwitchAPIv5(BaseAPI):
         params = {
             'limit':          str(limit),
             'offset':         str(offset),
-            'broadcast_type': broadcast_type,
+            'broadcast_type': list_to_str(broadcast_type) if broadcast_type else None,
             'language':       language,
             'sort':           sort,
         }
@@ -83,7 +83,7 @@ class TwitchAPIv5(BaseAPI):
 
     async def get_chat_emoticons(self, *, emotesets: Optional[List[int]] = None) -> JSONT:
         emotesets = emotesets or []
-        params = {'emotesets': list(map(str, emotesets))}
+        params = {'emotesets': list_to_str(map(str, emotesets))}
 
         return await self._kraken_get('chat/emoticon_images', params=params)
 
@@ -238,7 +238,7 @@ class TwitchAPIv5(BaseAPI):
             raise ValueError(f'Invalid stream type. Valid values: {TwitchAPIv5.STREAM_TYPES}')
 
         params = {
-            'channel':     channel,
+            'channel':     list_to_str(channel) if channel else None,
             'game':        game,
             'language':    language,
             'stream_type': stream_type,
@@ -290,13 +290,10 @@ class TwitchAPIv5(BaseAPI):
         if update_storage:
             missing_logins = login
         else:
-            missing_logins = list(filter(lambda x: x not in self._login_storage, login))
+            missing_logins = [login_ for login_ in login if login_ not in self._login_storage]
 
-        params = filter_none_and_empty({
-            'login': missing_logins,
-        })
-
-        if params:
+        if missing_logins:
+            params = {'login': list_to_str(missing_logins)}
             response = await self._kraken_get('users', params=params)
             for user in response['users']:
                 self._id_storage[user['_id']] = user
@@ -356,7 +353,7 @@ class TwitchAPIv5(BaseAPI):
             'offset':         str(offset),
             'game':           game,
             'period':         period,
-            'broadcast_type': broadcast_type,
+            'broadcast_type': list_to_str(broadcast_type) if broadcast_type else None,
             'language':       language,
             'sort':           sort,
         }
@@ -366,3 +363,7 @@ class TwitchAPIv5(BaseAPI):
     async def _kraken_get(self, path: str, *, params: Optional[URLParameterT] = None) -> JSONT:
         response = await self._request('get', urljoin(TwitchAPIv5.DOMAIN, path), params=params)
         return cast(JSONT, await response.json())
+
+
+def list_to_str(l: Iterable[str]) -> str:
+    return ','.join(l)
