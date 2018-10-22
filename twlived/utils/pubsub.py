@@ -1,8 +1,10 @@
 import asyncio
+import logging
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
+from functools import partial
 from itertools import takewhile
 from typing import Awaitable, Callable, Dict, List, Optional, Type, Union
 
@@ -22,18 +24,21 @@ class Provider:
         self.subscribers: Dict[Type[BaseEvent], List['Subscriber']] = defaultdict(list)
 
     async def notify(self, event: BaseEvent) -> None:
-        def callback(t: asyncio.Task) -> None:
+        def callback(subscriber_: Subscriber, t: asyncio.Task) -> None:
             # noinspection PyBroadException
             try:
                 t.result()
-            except Exception as e:
-                pass
+            except Exception:
+                logging.warning('Got exception when notifying {subscriber} with {event}:',
+                                exc_info=True,
+                                extra={'subscriber': subscriber_, 'event': event})
 
         event_superclasses = takewhile(lambda event_type: event_type is not object, type(event).mro())
         for subscribers in (self.subscribers.get(event_cls, []) for event_cls in event_superclasses):
             for subscriber in subscribers:
                 task = asyncio.create_task(subscriber.handle(event))
-                task.add_done_callback(callback)
+                callback_ = partial(callback, subscriber)
+                task.add_done_callback(callback_)
 
     def subscribe(self, subscriber: 'Subscriber', *event_types: Type[BaseEvent]) -> None:
         for event_type in event_types:
