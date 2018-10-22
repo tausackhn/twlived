@@ -60,6 +60,7 @@ class Provider:
 
 class ProviderClientMixin:
     def __init__(self) -> None:
+        super().__init__()
         self.provider: Optional[Provider] = None
 
     def connect_to(self, message_center: Provider) -> None:
@@ -67,18 +68,12 @@ class ProviderClientMixin:
 
 
 class Publisher(ProviderClientMixin):
-    def __init__(self) -> None:
-        super().__init__()
-
     async def publish(self, event: BaseEvent) -> None:
         if self.provider:
             await self.provider.notify(event)
 
 
 class Subscriber(ProviderClientMixin, ABC):
-    def __init__(self) -> None:
-        super().__init__()
-
     def subscribe(self, *event_types: Type[BaseEvent]) -> None:
         if not self.provider:
             raise AttributeError('No provider specified.')
