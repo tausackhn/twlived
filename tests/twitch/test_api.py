@@ -59,7 +59,7 @@ class TestTwitchAPI:
     @pytest.mark.parametrize('version', TwitchAPI.VERSIONS)
     async def test_get_video(self, twitch_api, version):
         twitch_api.version = version
-        video = await twitch_api.get_video('298535357')
+        video = await twitch_api.get_video('303908553')
         assert video
         with pytest.raises(aiohttp.ClientResponseError, message='Bad Request'):
             await twitch_api.get_video('abc')
@@ -72,7 +72,7 @@ class TestTwitchAPI:
         assert isinstance(streams[0], StreamInfo)
 
     async def test_get_variant_playlist(self, twitch_api):
-        response = await twitch_api.get_variant_playlist('298535357')
+        response = await twitch_api.get_variant_playlist('303908553')
         assert response
 
     async def test_get_live_variant_playlist(self, twitch_api, random_channel):

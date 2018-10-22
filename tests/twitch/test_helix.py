@@ -114,9 +114,9 @@ class TestTwitchAPIHelix:
         assert all(map(lambda v: v['user_id'] == '25604128', helix_data.data))
 
     async def test_get_videos_user_id(self, helix_api):
-        helix_data = await helix_api.get_videos(user_id='25604128')
+        helix_data = await helix_api.get_videos(user_id='25604128', first=30)
         assert helix_data.cursor
-        assert len(helix_data.data) == 20
+        assert len(helix_data.data) == 30
 
     async def test_get_videos_game_id(self, helix_api):
         helix_data = await helix_api.get_videos(game_id='417752')
@@ -172,7 +172,7 @@ class TestTwitchAPIHelix:
             '490292': 'Dark Souls 3',
         }
         data = await helix_api.get_games(name=list(games.values()))
-        assert set(game['id'] for game in data) == set(games.keys())
+        assert {game['id'] for game in data} == set(games.keys())
 
     async def test_get_top_games(self, helix_api):
         helix_data = await helix_api.get_top_games()

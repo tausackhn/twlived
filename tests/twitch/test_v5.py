@@ -226,6 +226,7 @@ class TestTwitchAPIv5:
                 'viewable'}
         assert keys.issubset(response.keys())
 
+    @pytest.mark.skip('Twitch API always return 500 internal server error')
     async def test_get_top_videos(self, api_v5):
         response = await api_v5.get_top_videos(limit=20, broadcast_type=['highlight'])
         assert response['vods']
