@@ -118,7 +118,7 @@ class TwitchAPIv5Adapter(TwitchAPIAdapter):
                            data=video)
 
     async def get_streams(self, channels: List[str], *, stream_type: str = 'live') -> List[StreamInfo]:
-        user_ids = list(map(lambda u: u['_id'], await self._api.get_users(channels)))
+        user_ids = [user['_id'] for user in await self._api.get_users(channels)]
         data_list = (await self._api.get_live_streams(channel=user_ids))['streams']
         if not data_list:
             return []

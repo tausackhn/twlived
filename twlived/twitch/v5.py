@@ -299,8 +299,8 @@ class TwitchAPIv5(BaseAPI):
                 self._id_storage[user['_id']] = user
                 self._login_storage[user['name']] = user
 
-        return list(user for user in (self._login_storage.get(login_, None) for login_ in set(login))
-                    if user is not None)
+        return [user for user in (self._login_storage.get(login_, None) for login_ in login)
+                if user is not None]
 
     async def get_user_follows(self, user_id: str, *,
                                limit: int = 25,

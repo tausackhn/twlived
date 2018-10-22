@@ -218,9 +218,9 @@ class TwitchAPIHelix(BaseAPI):
             for user in data:
                 self._id_storage[user['id']] = self._login_storage[user['login']] = user
 
-        return list(user for user in chain((self._id_storage.get(id_, None) for id_ in set(id)),
-                                           (self._login_storage.get(login_, None) for login_ in set(login)))
-                    if user is not None)
+        return [user for user in chain((self._id_storage.get(id_, None) for id_ in set(id)),
+                                       (self._login_storage.get(login_, None) for login_ in set(login)))
+                if user is not None]
 
     # noinspection PyShadowingBuiltins
     async def get_clips(self, *,
