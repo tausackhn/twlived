@@ -92,7 +92,7 @@ class WebhookTracker(StreamTrackerBase):
         if not (signature and hmac.compare_digest(digest.hexdigest(), signature)):
             return web.Response(status=403)
 
-        event_id = request.headers.get('Twitch-Notification-Id', None)
+        event_id: Optional[str] = request.headers.get('Twitch-Notification-Id', None)
         if not event_id:
             return web.Response(status=404)
 
@@ -124,8 +124,7 @@ class WebhookTracker(StreamTrackerBase):
         user_data = await self.api.get_users(login=self.channels)
         tasks = []
         for user in user_data:
-            webhook_path = (f'http://{self.host}:{self.port}'
-                            f'/{WebhookTracker.WEBHOOK_BASE}/{WebhookTracker.STREAMS}/{user["login"]}')
+            webhook_path = await self.get_webhook_path(user['login'])
             task = asyncio.create_task(subscribe_webhook(webhook_path, HubTopic.streams(user['id']),
                                                          str(self.webhook_secret, encoding='ascii'),
                                                          self._lease_time))
@@ -144,13 +143,15 @@ class WebhookTracker(StreamTrackerBase):
                                                     if status == 'subscribed'])
         tasks = []
         for user in user_data:
-            webhook_path = (f'http://{self.host}:{self.port}'
-                            f'/{WebhookTracker.WEBHOOK_BASE}/{WebhookTracker.STREAMS}/{user["login"]}')
+            webhook_path = await self.get_webhook_path(user['login'])
             task = asyncio.create_task(unsubscribe_webhook(webhook_path, HubTopic.streams(user['id']),
                                                            str(self.webhook_secret, encoding='ascii'),
                                                            self._lease_time))
             tasks.append(task)
         await asyncio.wait(tasks)
+
+    async def get_webhook_path(self, login: str) -> str:
+        return f'http://{self.host}/{self.WEBHOOK_BASE}/{self.STREAMS}/{login}'
 
     async def _update_webhook(self) -> None:
         while True:
