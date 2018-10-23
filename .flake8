@@ -3,4 +3,5 @@ max-line-length = 120
 max-complexity = 10
 enable-extensions = G
 per-file-ignores =
-  /twlived/twitch/base.py: F811
+  # Using print in examples
+  examples/*.py: T001
