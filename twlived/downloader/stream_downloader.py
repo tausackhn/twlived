@@ -75,9 +75,9 @@ class TwitchStreamDownloader(Publisher, Subscriber):
     @contextmanager
     def create_new_file(self) -> Iterator[IO[bytes]]:
         with NamedTemporaryFile(suffix='.ts', delete=False, dir=str(self.temporary_folder.resolve())) as file:
-            logging.info('Create temporary file {name}', extra={'name': file.name})
+            logging.info('Create temporary file %s', file.name)
             yield file
-            logging.info('Closing temporary file {name}', extra={'name': file.name})
+            logging.info('Closing temporary file %s', file.name)
 
     async def wait_for_vod(self, channel: str, started_at: datetime) -> str:
         while True:

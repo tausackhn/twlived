@@ -29,9 +29,7 @@ class Provider:
             try:
                 t.result()
             except Exception:
-                logging.warning('Got exception when notifying {subscriber} with {event}:',
-                                exc_info=True,
-                                extra={'subscriber': subscriber_, 'event': event})
+                logging.warning('Got exception when notifying %s with %s:', subscriber_, event, exc_info=True)
 
         event_superclasses = takewhile(lambda event_type: event_type is not object, type(event).mro())
         for subscribers in (self.subscribers.get(event_cls, []) for event_cls in event_superclasses):
