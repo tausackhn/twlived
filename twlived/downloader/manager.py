@@ -137,6 +137,7 @@ class TwitchDownloadManager(Publisher):
             # Sure that all tasks was done.
             for segment, task in zip(chunk, takewhile(lambda t: not (t.cancelled() or t.exception()), tasks)):
                 output_file.write(task.result())
+                progress_callback_(ProgressData(write_segment=1))
                 last_successful_segment = segment[0]
 
             if cancelled_tasks:

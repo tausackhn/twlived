@@ -14,6 +14,7 @@ class ProgressData(NamedTuple):
     last_segment: Optional[int] = None
     data_size: Optional[float] = None
     complete_segment: Optional[int] = None
+    write_segment: Optional[int] = None
 
 
 @dataclass
