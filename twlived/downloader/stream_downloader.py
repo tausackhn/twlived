@@ -35,6 +35,7 @@ class TwitchStreamDownloader(Publisher, Subscriber):
         self.temporary_folder = temporary_folder
         self._manager = manager or TwitchDownloadManager(twitch_api, self.session)
 
+        # Represents channel_id: set of datetimes
         self._downloading_streams: Dict[str, Set[datetime]] = collections.defaultdict(set)
 
     @property
@@ -65,11 +66,11 @@ class TwitchStreamDownloader(Publisher, Subscriber):
 
     @contextmanager
     def downloading_stream(self, event: StreamOnline) -> Iterator[None]:
-        self._downloading_streams[event.channel_name].add(event.started_at)
+        self._downloading_streams[event.channel_id].add(event.started_at)
         try:
             yield
         finally:
-            self._downloading_streams[event.channel_name].remove(event.started_at)
+            self._downloading_streams[event.channel_id].remove(event.started_at)
 
     @contextmanager
     def create_new_file(self) -> Iterator[IO[bytes]]:
